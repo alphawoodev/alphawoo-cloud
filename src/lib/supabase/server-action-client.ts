@@ -11,7 +11,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
  * This bypasses the SSR helper that cannot synchronously access cookies in Server Actions.
  */
 export async function createAuthenticatedServerActionClient() {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
   const accessToken = cookieStore.get('sb-access-token')?.value
 
   if (!accessToken) {
