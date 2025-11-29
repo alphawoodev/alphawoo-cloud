@@ -35,18 +35,24 @@ export async function POST(request: Request) {
 
   const apiKey = store.api_key
 
-  // 3. Prepare Payload for Verification (Remove security fields)
+  // 3. Parse the JSON once so we can both verify and process the payload
+  let payload: Record<string, any>
+  try {
+    payload = JSON.parse(rawBody)
+  } catch (e) {
+    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
+  }
+
+  // 4. Prepare Payload for Verification (Remove security fields)
   const payloadToSign = { ...payload }
   delete payloadToSign.aw_store_id
   delete payloadToSign.aw_signature
-  
   const rawBodyToVerify = JSON.stringify(payloadToSign)
 
-
-  // 4. HMAC Signature Verification (The core security logic)
-    const expectedSignature = crypto
+  // 5. HMAC Signature Verification (The core security logic)
+  const expectedSignature = crypto
     .createHmac('sha256', apiKey)
-    .update(rawBody)
+    .update(rawBodyToVerify)
     .digest('hex')
 
   // --- DEBUG LOGGING: CRITICAL DIAGNOSTIC STEP ---
@@ -65,14 +71,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Signature verification failed.' }, { status: 403 })
   }
   
-  // 5. Successful Verification: Process the Data
-  let payload: any
-  try {
-    payload = JSON.parse(rawBody)
-  } catch (e) {
-    // Should not happen if the plugin is working correctly, but safe fail.
-    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
-  }
+  // 6. Successful Verification: Process the Data
 
   // --- DAY 3: The First Flow Action ---
   // Forward the verified payload to Make.com via Webhook (Section 4)
