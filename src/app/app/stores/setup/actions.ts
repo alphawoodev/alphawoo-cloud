@@ -2,6 +2,7 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 
 /**
@@ -10,11 +11,10 @@ import { v4 as uuidv4 } from 'uuid'
  */
 export async function storeConnectAction(formData: FormData) {
   const domain = formData.get('domain') as string
-  const apiKey = formData.get('apiKey') as string
   const supabase = createClient()
 
-  if (!domain || !apiKey) {
-    console.error('Store connect validation failed: missing domain or apiKey')
+  if (!domain) {
+    console.error('Store connect validation failed: missing domain')
     return
   }
 
@@ -42,13 +42,16 @@ export async function storeConnectAction(formData: FormData) {
 
   const organizationId = organization.id
 
+  const newStoreId = uuidv4()
+  const newApiKey = `awsk_${crypto.randomBytes(32).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`
+
   // 3. Securely insert the new store data
   const { error: storeError } = await supabase.from('stores').insert([
     {
-      id: uuidv4(),
+      id: newStoreId,
       organization_id: organizationId,
       woocommerce_domain: domain,
-      api_key: apiKey,
+      api_key: newApiKey,
       shadow_mode: true,
     },
   ])
@@ -58,5 +61,11 @@ export async function storeConnectAction(formData: FormData) {
     return
   }
 
-  redirect('/app/stores')
+  const params = new URLSearchParams({
+    storeId: newStoreId,
+    domain,
+    apiKey: newApiKey,
+  })
+
+  redirect(`/app/stores/confirm?${params.toString()}`)
 }
