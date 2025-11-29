@@ -63,6 +63,6 @@ export async function storeConnectAction(formData: FormData) {
     }
 
     console.error('Critical Server Action Failure:', error)
-    return { success: false, error: 'A critical server error occurred during setup.' }
+    return
   }
 }
