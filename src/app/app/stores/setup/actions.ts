@@ -8,11 +8,7 @@ import { v4 as uuidv4 } from 'uuid'
 
 import { Database } from '@/lib/database.types'
 
-/**
- * Handles the secure submission of new store credentials.
- * This Next.js Server Action links the store to the user's organization.
- */
-const createSessionClient = () => {
+const createSessionChecker = () => {
   const cookieStore = cookies() as any
 
   return createServerClient<Database>(
@@ -20,28 +16,23 @@ const createSessionClient = () => {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get: (name: string) => cookieStore.get(name),
-        set: (_name: string, _value: string, _options: any) => {
-          // no-op to avoid mutation in server actions
+        get: (name: string) => cookieStore.get(name)?.value,
+        set: () => {
+          // no-op
         },
-        remove: (_name: string, _options: any) => {
-          // no-op to avoid mutation in server actions
+        remove: () => {
+          // no-op
         },
       },
     },
   )
 }
 
-const createStatelessClient = (accessToken: string) =>
+const createStatelessWriter = () =>
   createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      global: {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-        },
-      },
       cookies: {
         get: () => undefined,
         set: () => {
@@ -62,26 +53,21 @@ export async function storeConnectAction(formData: FormData) {
     return
   }
 
-  const supabaseSessionChecker = createSessionClient()
+  const supabaseSessionChecker = createSessionChecker()
 
-  // 1. Get current authenticated user session
+  // 1. Session validation
   const { data: userSession, error: authError } = await supabaseSessionChecker.auth.getSession()
 
   if (authError || !userSession.session) {
     redirect('/login')
   }
 
-  const { user, access_token } = userSession.session
-  const userId = user.id
+  const userId = userSession.session.user.id
 
-  if (!access_token) {
-    redirect('/login')
-  }
+  const supabaseDatabaseWriter = createStatelessWriter()
 
-  const supabaseStateless = createStatelessClient(access_token)
-
-  // 2. Find the Organization ID for the current user
-  const { data: organization, error: orgError } = await supabaseStateless
+  // 2. Organization lookup
+  const { data: organization, error: orgError } = await supabaseDatabaseWriter
     .from('organizations')
     .select('id')
     .eq('owner_id', userId)
@@ -95,11 +81,12 @@ export async function storeConnectAction(formData: FormData) {
 
   const organizationId = organization.id
 
+  // 3. Generate credentials
   const newStoreId = uuidv4()
   const newApiKey = `awsk_${crypto.randomBytes(32).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`
 
-  // 3. Securely insert the new store data
-  const { error: storeError } = await supabaseStateless.from('stores').insert([
+  // 4. Insert new store
+  const { error: storeError } = await supabaseDatabaseWriter.from('stores').insert([
     {
       id: newStoreId,
       organization_id: organizationId,
@@ -114,11 +101,7 @@ export async function storeConnectAction(formData: FormData) {
     return
   }
 
-  const params = new URLSearchParams({
-    storeId: newStoreId,
-    domain,
-    apiKey: newApiKey,
-  })
-
-  redirect(`/app/stores/confirm?${params.toString()}`)
+  redirect(
+    `/app/stores/confirm?storeId=${newStoreId}&domain=${encodeURIComponent(domain)}&apiKey=${encodeURIComponent(newApiKey)}`,
+  )
 }
