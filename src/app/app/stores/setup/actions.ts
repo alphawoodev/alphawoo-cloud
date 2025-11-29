@@ -1,42 +1,10 @@
 'use server'
 
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 
-import { Database } from '@/lib/database.types'
-
-const createAuthenticatedSupabaseClient = () => {
-  const cookieStore = cookies() as any
-  const token = cookieStore.get('sb-access-token')?.value
-
-  if (!token) {
-    throw new Error('Authentication token not found.')
-  }
-
-  return createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      global: {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      },
-      cookies: {
-        get: () => undefined,
-        set: () => {
-          // no-op
-        },
-        remove: () => {
-          // no-op
-        },
-      },
-    },
-  )
-}
+import { createClient } from '@/lib/supabase/server'
 
 export async function storeConnectAction(formData: FormData) {
   const domain = formData.get('domain') as string
@@ -47,7 +15,7 @@ export async function storeConnectAction(formData: FormData) {
   }
 
   try {
-    const supabase = createAuthenticatedSupabaseClient()
+    const supabase = createClient()
 
     const {
       data: { user },
@@ -55,7 +23,7 @@ export async function storeConnectAction(formData: FormData) {
     } = await supabase.auth.getUser()
 
     if (authError || !user) {
-      throw new Error('Invalid or expired session token.')
+      redirect('/login')
     }
 
     const userId = user.id
@@ -73,7 +41,6 @@ export async function storeConnectAction(formData: FormData) {
     }
 
     const organizationId = organization.id
-
     const newStoreId = uuidv4()
     const newApiKey = `awsk_${crypto.randomBytes(32).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`
 
@@ -95,12 +62,8 @@ export async function storeConnectAction(formData: FormData) {
     redirect(
       `/app/stores/confirm?storeId=${newStoreId}&domain=${encodeURIComponent(domain)}&apiKey=${encodeURIComponent(newApiKey)}`,
     )
-  } catch (error: any) {
-    if (typeof error?.message === 'string' && error.message.includes('token')) {
-      redirect('/login')
-    }
-
+  } catch (error) {
     console.error('Critical Server Action Failure:', error)
-    return
+    redirect('/login')
   }
 }
