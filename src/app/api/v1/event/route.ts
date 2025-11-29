@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   // --- DEBUG LOGGING: CRITICAL DIAGNOSTIC STEP ---
   console.log("DEBUG: --- HMAC CHECK ---");
   console.log("DEBUG: Store ID:", storeId);
-  console.log("DEBUG: Raw Body to Verify:", rawBodyToVerify.substring(0, 100) + '...'); 
+  console.log("DEBUG: Raw Body to Verify:", rawBodyToVerify);
   console.log("DEBUG: Expected Signature:", expectedSignature);
   console.log("DEBUG: Received Signature:", signature);
   console.log("DEBUG: --- END CHECK ---");
