@@ -56,13 +56,14 @@ export async function storeConnectAction(formData: FormData) {
     )
   } catch (error) {
     const err = error as { message?: string }
-    const message = err?.message ?? ''
+    console.error('CRITICAL SETUP FAILURE:', err?.message)
+    console.error('Full Error Stack:', error)
 
+    const message = err?.message ?? ''
     if (message.includes('token') || message.includes('Unauthorized')) {
       redirect('/login')
     }
 
-    console.error('Critical Server Action Failure:', error)
     return
   }
 }

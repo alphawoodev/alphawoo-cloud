@@ -6,60 +6,43 @@ import { Database } from '@/lib/database.types'
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-/**
- * Creates an authenticated Supabase client for Server Actions by manually
- * extracting the user's JWT from cookies and injecting it into the client.
- */
 export async function createAuthenticatedServerActionClient() {
   const cookieStore = await cookies()
+  const allCookies = cookieStore.getAll()
 
-  let projectRef = ''
-  try {
-    const urlParts = SUPABASE_URL.split('//')
-    if (urlParts.length > 1) {
-      projectRef = urlParts[1].split('.')[0]
-    }
-  } catch (e) {
-    console.warn('Could not parse project ref from URL')
-  }
+  console.log('DEBUG [Auth]: Checking Cookies. Total found:', allCookies.length)
+  console.log('DEBUG [Auth]: Cookie Names:', allCookies.map((c) => c.name).join(', '))
 
-  let accessToken = projectRef ? cookieStore.get(`sb-${projectRef}-auth-token`)?.value : undefined
+  const authCookie = allCookies.find(
+    (c) => (c.name.startsWith('sb-') && c.name.endsWith('-auth-token')) || c.name === 'sb-access-token',
+  )
 
-  if (!accessToken) {
-    accessToken = cookieStore.get('sb-access-token')?.value
-  }
-
-  if (!accessToken) {
-    console.error('Auth Fail: No access token found. Available cookies:', cookieStore.getAll().map((c) => c.name))
+  if (!authCookie) {
+    console.error('ERROR [Auth]: No Supabase cookie found matching pattern!')
     throw new Error('No authentication token found in cookies')
   }
 
-  let token = accessToken
-  if (accessToken.startsWith('{') || accessToken.includes('"access_token"')) {
+  let token = authCookie.value
+
+  if (token.startsWith('[') || token.startsWith('{')) {
     try {
-      const sessionData = JSON.parse(accessToken)
-      token = sessionData.access_token || accessToken
+      const parsed = JSON.parse(token)
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        token = parsed[0]
+      } else if (parsed?.access_token) {
+        token = parsed.access_token
+      }
     } catch (e) {
-      // Ignore parse errors and fall back to raw value
+      console.warn('WARN [Auth]: JSON Parse failed, using raw value')
     }
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-    global: {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    },
+    auth: { autoRefreshToken: false, persistSession: false },
+    global: { headers: { Authorization: `Bearer ${token}` } },
   })
 }
 
-/**
- * Primary method: fetch authenticated user with the crash-proof client.
- */
 export async function getServerActionUser() {
   const supabase = await createAuthenticatedServerActionClient()
   const {
@@ -68,6 +51,7 @@ export async function getServerActionUser() {
   } = await supabase.auth.getUser()
 
   if (error || !user) {
+    console.error('ERROR [Auth]: Token valid but getUser failed:', error?.message)
     throw new Error('Unauthorized: ' + (error?.message || 'No user found'))
   }
 
