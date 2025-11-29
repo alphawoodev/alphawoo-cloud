@@ -7,8 +7,8 @@ import { Database } from '@/lib/database.types'
  * Creates the secure, session-aware Supabase client for Server Components and API Routes.
  * This client manages the user's session via Next.js cookies (HMAC security).
  */
-export const createClient = () => {
-  const cookieStore = cookies() as any
+export const createClient = async () => {
+  const cookieStore = (await cookies()) as any
 
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

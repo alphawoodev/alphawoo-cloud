@@ -17,7 +17,7 @@ export async function storeConnectAction(formData: FormData) {
 
   try {
     const user = await getServerActionUser()
-    const supabase = createSupabaseServerClient()
+    const supabase = await createSupabaseServerClient()
     const userId = user.id
 
     const { data: organization, error: orgError } = await supabase
