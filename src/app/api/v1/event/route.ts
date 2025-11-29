@@ -1,26 +1,42 @@
 // src/app/api/v1/event/route.ts
 import { NextResponse } from 'next/server'
-// FIX: We now import the 'createClient' helper, which correctly calls cookies() internally.
 import { createClient } from '@/lib/supabase/server' // Secure Server Client
 import crypto from 'crypto'
 
 // The Ingestion API is strictly for Plugin traffic (Section 4)
 export async function POST(request: Request) {
-  // 1. Extract Headers and Signature
-  const storeId = request.headers.get('X-AlphaWoo-Store-ID')
-  const signature = request.headers.get('X-AlphaWoo-Signature')
   
-  if (!storeId || !signature) {
-    // Missing required security headers. Immediate 400 rejection.
-    return NextResponse.json({ error: 'Missing security headers' }, { status: 400 })
-  }
-
-  // 2. Read Body and Get Raw Text (Crucial for HMAC verification)
-  // We must use the raw text body BEFORE parsing it as JSON.
+  // 1. Read Body and Parse Payload IMMEDIATELY
   const rawBody = await request.text()
   
-  // 3. Retrieve API Key from the Data SSOT
-  const supabase = createClient() // The fixed helper function is used here
+  let payload: Record<string, any>; 
+  try {
+    payload = JSON.parse(rawBody)
+  } catch (e) {
+    // If the request body isn't valid JSON, reject it
+    console.warn("DEBUG: Invalid JSON payload received. Payload start:", rawBody.substring(0, 50));
+    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
+  }
+
+  // 2. Extract Security Credentials from the Body (FINAL FIX: Bypassing headers)
+  const storeId = payload.aw_store_id as string
+  const signature = payload.aw_signature as string
+  
+  if (!storeId || !signature) {
+    // This is the correct guard rail against missing *body* credentials
+    return NextResponse.json({ error: 'Missing security payload data (aw_store_id/aw_signature)' }, { status: 400 })
+  }
+
+  // 3. Prepare Payload for Verification (Remove security fields)
+  // This is the portion of the payload the client signed.
+  const payloadToSign = { ...payload }
+  delete payloadToSign.aw_store_id
+  delete payloadToSign.aw_signature
+  
+  const rawBodyToVerify = JSON.stringify(payloadToSign) 
+
+  // 4. Retrieve API Key from the Data SSOT (Now safe to do)
+  const supabase = createClient()
   const { data: store, error: dbError } = await supabase
     .from('stores')
     .select('api_key')
@@ -28,26 +44,11 @@ export async function POST(request: Request) {
     .single()
 
   if (dbError || !store) {
-    console.error('Store lookup failed:', dbError?.message)
-    // Avoid confirming the store ID exists to prevent enumeration attacks.
+    console.error(`Store lookup failed for ${storeId}:`, dbError?.message)
     return NextResponse.json({ error: 'Unauthorized access.' }, { status: 401 })
   }
 
   const apiKey = store.api_key
-
-  // 3. Parse the JSON once so we can both verify and process the payload
-  let payload: Record<string, any>
-  try {
-    payload = JSON.parse(rawBody)
-  } catch (e) {
-    return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
-  }
-
-  // 4. Prepare Payload for Verification (Remove security fields)
-  const payloadToSign = { ...payload }
-  delete payloadToSign.aw_store_id
-  delete payloadToSign.aw_signature
-  const rawBodyToVerify = JSON.stringify(payloadToSign)
 
   // 5. HMAC Signature Verification (The core security logic)
   const expectedSignature = crypto
@@ -56,10 +57,8 @@ export async function POST(request: Request) {
     .digest('hex')
 
   // --- DEBUG LOGGING: CRITICAL DIAGNOSTIC STEP ---
-  // LOGGING IS NOW PLACED AFTER VARIABLE DEFINITIONS
   console.log("DEBUG: --- HMAC CHECK ---");
   console.log("DEBUG: Store ID:", storeId);
-  // Safely substring the raw body for logging
   console.log("DEBUG: Raw Body to Verify:", rawBodyToVerify.substring(0, 100) + '...'); 
   console.log("DEBUG: Expected Signature:", expectedSignature);
   console.log("DEBUG: Received Signature:", signature);
@@ -71,25 +70,19 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Signature verification failed.' }, { status: 403 })
   }
   
-  // 6. Successful Verification: Process the Data
-
-  // --- DAY 3: The First Flow Action ---
-  // Forward the verified payload to Make.com via Webhook (Section 4)
+  // 6. Successful Verification: Forward to Make.com
   const makeWebhookUrl = process.env.MAKE_WEBHOOK_URL
   
   if (makeWebhookUrl) {
-      // NOTE: This fetch should ideally be non-blocking (e.g., pushed to a queue like QStash)
-      // for true high-performance, but we use direct fetch for the POC (Queue, Section 4).
       await fetch(makeWebhookUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+          body: rawBodyToVerify, // Forwarding the clean, verified body
       });
   }
   
-  // Log the receipt for analytics and verification
   console.log(`Payload received and verified for Store: ${storeId}. Event Type: ${payload.event_type}`)
 
-  // 6. Return Success
+  // 7. Return Success
   return NextResponse.json({ success: true, message: 'Payload received and authenticated.' }, { status: 200 })
 }
