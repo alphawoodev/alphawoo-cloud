@@ -8,31 +8,19 @@ import { v4 as uuidv4 } from 'uuid'
 
 import { Database } from '@/lib/database.types'
 
-const createSessionChecker = () => {
+const createAuthenticatedSupabaseClient = () => {
   const cookieStore = cookies() as any
+  const token = cookieStore.get('sb-access-token')?.value
 
   return createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      cookies: {
-        get: (name: string) => cookieStore.get(name),
-        set: () => {
-          // no-op
-        },
-        remove: () => {
-          // no-op
+      global: {
+        headers: {
+          Authorization: token ? `Bearer ${token}` : '',
         },
       },
-    },
-  )
-}
-
-const createStatelessWriter = () =>
-  createServerClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
       cookies: {
         get: () => undefined,
         set: () => {
@@ -44,6 +32,7 @@ const createStatelessWriter = () =>
       },
     },
   )
+}
 
 export async function storeConnectAction(formData: FormData) {
   const domain = formData.get('domain') as string
@@ -53,21 +42,20 @@ export async function storeConnectAction(formData: FormData) {
     return
   }
 
-  const supabaseSessionChecker = createSessionChecker()
+  const supabase = createAuthenticatedSupabaseClient()
 
-  // 1. Session validation
-  const { data: userSession, error: authError } = await supabaseSessionChecker.auth.getSession()
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
 
-  if (authError || !userSession.session) {
+  if (authError || !user) {
     redirect('/login')
   }
 
-  const userId = userSession.session.user.id
+  const userId = user.id
 
-  const supabaseDatabaseWriter = createStatelessWriter()
-
-  // 2. Organization lookup
-  const { data: organization, error: orgError } = await supabaseDatabaseWriter
+  const { data: organization, error: orgError } = await supabase
     .from('organizations')
     .select('id')
     .eq('owner_id', userId)
@@ -80,13 +68,10 @@ export async function storeConnectAction(formData: FormData) {
   }
 
   const organizationId = organization.id
-
-  // 3. Generate credentials
   const newStoreId = uuidv4()
   const newApiKey = `awsk_${crypto.randomBytes(32).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`
 
-  // 4. Insert new store
-  const { error: storeError } = await supabaseDatabaseWriter.from('stores').insert([
+  const { error: storeError } = await supabase.from('stores').insert([
     {
       id: newStoreId,
       organization_id: organizationId,
@@ -101,7 +86,11 @@ export async function storeConnectAction(formData: FormData) {
     return
   }
 
-  redirect(
-    `/app/stores/confirm?storeId=${newStoreId}&domain=${encodeURIComponent(domain)}&apiKey=${encodeURIComponent(newApiKey)}`,
-  )
+  const params = new URLSearchParams({
+    storeId: newStoreId,
+    domain,
+    apiKey: newApiKey,
+  })
+
+  redirect(`/app/stores/confirm?${params.toString()}`)
 }
