@@ -32,7 +32,7 @@ export async function POST(request: Request) {
   const payloadToSign = { ...payload }
   delete payloadToSign.aw_store_id
   delete payloadToSign.aw_signature
-  
+  delete payloadToSign.aw_timestamp_utc;
   const rawBodyToVerify = JSON.stringify(payloadToSign, Object.keys(payloadToSign).sort()); 
 
   // 4. Retrieve API Key from the Data SSOT (Now safe to do)
