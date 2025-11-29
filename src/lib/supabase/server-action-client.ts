@@ -23,37 +23,39 @@ export async function createAuthenticatedServerActionClient() {
   let token = rawValue
 
   try {
-    const decoded = decodeURIComponent(rawValue)
-
-    if (decoded.startsWith('[') || decoded.startsWith('{')) {
-      const parsed = JSON.parse(decoded)
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        token = parsed[0]
-      } else if (parsed.access_token) {
-        token = parsed.access_token
-      }
-    } else if (!decoded.startsWith('ey')) {
+    if (rawValue.startsWith('base64-')) {
+      const base64Str = rawValue.replace('base64-', '')
+      const decodedStr = Buffer.from(base64Str, 'base64').toString('utf-8')
       try {
-        const base64Decoded = Buffer.from(decoded, 'base64').toString('utf-8')
-        const parsedB64 = JSON.parse(base64Decoded)
-        if (parsedB64.access_token) {
-          token = parsedB64.access_token
-        } else if (Array.isArray(parsedB64) && parsedB64.length > 0) {
-          token = parsedB64[0]
+        const parsed = JSON.parse(decodedStr)
+        if (parsed.access_token) {
+          token = parsed.access_token
+        } else {
+          token = decodedStr
         }
       } catch {
-        // Ignore base64 parsing errors
+        token = decodedStr
       }
     } else {
-      token = decoded
+      const decoded = decodeURIComponent(rawValue)
+      if (decoded.startsWith('[') || decoded.startsWith('{')) {
+        const parsed = JSON.parse(decoded)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          token = parsed[0]
+        } else if (parsed.access_token) {
+          token = parsed.access_token
+        }
+      } else {
+        token = decoded
+      }
     }
   } catch (e) {
-    console.warn('WARN [Auth]: Token parsing hit an edge case, using raw value.')
+    console.warn('WARN [Auth]: Parsing failed, attempting to use raw value.')
   }
 
-  if (!token.startsWith('ey')) {
-    console.error("CRITICAL [Auth]: Extracted token does not look like a JWT (doesn't start with 'ey').")
-    console.error('CRITICAL [Auth]: Raw Cookie Start:', rawValue.substring(0, 20))
+  if (!token || !token.startsWith('ey')) {
+    console.error("CRITICAL [Auth]: Extraction failed. Token does not start with 'ey'.")
+    console.error('DEBUG: Extracted value start:', token.substring(0, 15))
     throw new Error('Malformed token extraction')
   }
 
@@ -71,7 +73,6 @@ export async function getServerActionUser() {
   } = await supabase.auth.getUser()
 
   if (error || !user) {
-    console.error('ERROR [Auth]: Token rejected by Supabase:', error?.message)
     throw new Error('Unauthorized')
   }
 
