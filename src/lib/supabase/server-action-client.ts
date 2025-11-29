@@ -11,7 +11,7 @@ const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
  * extracting the user's JWT from cookies and injecting it into the client.
  */
 export async function createAuthenticatedServerActionClient() {
-  const cookieStore = cookies()
+  const cookieStore = await cookies()
 
   let projectRef = ''
   try {
