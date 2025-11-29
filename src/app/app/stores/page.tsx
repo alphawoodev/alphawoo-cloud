@@ -51,15 +51,21 @@ export default async function StoresPage() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {stores.map((store: any) => (
-            <Link key={store.id} href={`/app/stores/${store.id}`} className="block h-full">
-              <Card className="group h-full cursor-pointer transition-colors hover:border-indigo-500">
+            <Link
+              key={store.id}
+              href={`/app/stores/${store.id}`}
+              className="block h-full transition-opacity hover:opacity-90"
+            >
+              <Card className="h-full cursor-pointer transition-colors hover:border-indigo-500">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">{store.woocommerce_domain}</CardTitle>
-                  <Zap className={`h-4 w-4 ${store.shadow_mode ? 'text-amber-500' : 'text-emerald-500'}`} />
+                  <CardTitle className="truncate pr-4 text-sm font-medium" title={store.woocommerce_domain}>
+                    {store.woocommerce_domain}
+                  </CardTitle>
+                  <Zap className={`h-4 w-4 flex-shrink-0 ${store.shadow_mode ? 'text-amber-500' : 'text-emerald-500'}`} />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">{store.shadow_mode ? 'Shadow Mode' : 'Active'}</div>
-                  <p className="mt-1 text-xs font-mono text-zinc-500">ID: {store.id.substring(0, 8)}...</p>
+                  <p className="mt-1 font-mono text-xs text-zinc-500">ID: {store.id.substring(0, 8)}...</p>
                 </CardContent>
               </Card>
             </Link>

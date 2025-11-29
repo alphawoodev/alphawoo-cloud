@@ -1,7 +1,7 @@
 # ALPHAWOO PROJECT BIBLE
 **Current Phase:** V3 Rewrite (Execution)
-**Last Updated:** 11-28-2025
-**Version:** 6.0 (THE AUTOMATION IMPERATIVE)
+**Last Updated:** 11-29-2025 (POST-HMAC FIX)
+**Version:** 7.0 (THE CANONICALIZATION IMPERATIVE)
 
 ## 1. Brand Identity (CRITICAL)
 * **Name:** **AlphaWoo** (CamelCase).
@@ -31,11 +31,12 @@ To prevent "feature creep" and "spaghetti code," we adhere to three strict sourc
 * **UI Components:** Shadcn UI (Radix Primitives).
 * **Interaction Layer:** `framer-motion` (Micro-interactions) + `sonner` (Premium Toasts).
 * **Authentication:** Supabase Auth (Native integration).
+    * **Note:** All Server Actions use the **Manual JWT Injection** method to prevent the fatal library crash. (See 12.2)
 * **Billing:** Stripe (SaaS Subscriptions).
     * **Requirement:** Must support Agency Billing (One Org pays for multiple Stores).
     * **Self-Serve:** Use **Stripe Customer Portal** for invoices/upgrades.
 * **Backend:** Next.js API Routes (Serverless) on Vercel.
-* **Security:** **HMAC Signature Verification.** All plugin payloads must be signed (`hash_hmac`) using the Store API Key.
+* **Security:** **HMAC Signature Verification (Body-Based).** Plugin payloads must contain the signature in the JSON body (`aw_signature`), not HTTP headers, to bypass WAFs. (See 12.1)
 * **Database:** Supabase (Postgres).
     * **Schema:** Organization -> Stores (Multi-Currency + Affiliate Tracking) -> Customers -> Carts.
 * **Integration Layer (NEW):** **Make.com (iPaaS).** We provide official Make.com blueprints for Agencies to extend our logic.
@@ -48,21 +49,10 @@ To prevent "feature creep" and "spaghetti code," we adhere to three strict sourc
     * **SaaS Dashboard:** `app.alphawoo.com` (The secure console).
     * **Ingestion API:** `api.alphawoo.com` (Strictly for Plugin traffic).
     * **Development:** `*.alphawoo.dev` (Staging and Sandbox stores).
-* **Email Infrastructure (The 3 Lanes):**
-    * **Corporate:** `alphawoo.com` (Google Workspace - ACTIVE). Handles Humans.
-    * **System:** `system.alphawoo.com` (Postmark). Handles SaaS Alerts/Auth.
-    * **Revenue:** `[Merchant-Domain]` via Sender Signatures. Handles End-Customer Recovery.
-* **Email Strategy (Role-Based Separation):**
-    * **`support@alphawoo.com` (Human):** Hosted on Google Workspace. For tickets/inquiries.
-    * **`alerts@alphawoo.com` (System):** Hosted on Postmark (Shadow Sender). For Auth, Downtime, and Risk notifications.
-    * **`billing@alphawoo.com` (Finance):** Hosted on Postmark (Shadow Sender). For Stripe receipts.
-* **Deliverability:**
-    * **DMARC:** Must be strictly enforced (`p=quarantine` minimum) on all System domains.
-    * **Separation:** Marketing emails must NEVER be sent from the `system.` subdomain.
 
 ## 5. Key Feature Logic
 * **Pending Payment Rescue:**
-    * Trigger: `woocommerce_order_status_pending` AND `created_via='checkout'`.
+    * Trigger: `woocommerce_order_status_pending` OR `woocommerce_order_status_on-hold` AND `created_via='checkout'`.
     * Action: Wait 30 mins -> Send Email.
 * **Live Listener (The "Cookie" Aware Script):**
     * JS listens to `#billing_phone` and `#billing_email` on blur.
@@ -166,4 +156,22 @@ To prevent "feature creep" and "spaghetti code," we adhere to three strict sourc
 ## 11. The AI Organization (Team Structure & Tooling)
 **Context Bridge:** This file (`AlphaWoo Project Bible.md`) is the API connecting all Gems. It must be uploaded to every session.
 
-### The Gem Squad
+## 12. Architectural Lessons Learned (The Hard Rules)
+This section outlines constraints derived from production conflicts between Node.js, PHP, and external environments.
+
+#### **12.1 HMAC Canonicalization Standard (PHP ↔ Node.js)**
+To ensure the HMAC signature always matches, we enforce the following **absolute standards** for payload signing:
+* **Payload Construction:** Only include core transactional data (e.g., `order_id`, `order_total`, `currency`) in the signed payload. Omit all dynamic fields like timestamps (`created_at_utc`) and complex, nested objects (`deep_data`) from the signing payload, as these cause byte discrepancies.
+* **Data Type Canonicalization:** All unique identifiers and numeric values used in the signature must be explicitly cast to strings (`strval()`) on the PHP side to prevent float/integer discrepancies.
+* **Encoding Flags (PHP Side):** The PHP connector must use native `json_encode()` with mandatory flags to mirror Node.js's output precisely:
+    * `ksort($array_to_sign)`: Must be applied to the top-level array before encoding.
+    * **Flags:** `JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_FORCE_OBJECT` (This is required to force consistent object rendering).
+
+#### **12.2 Next.js Server Action Authentication (The Anti-Crash Rule)**
+The standard `createServerClient` and `supabase.auth.getUser()` calls must be treated as **crash-prone** within Vercel Server Actions due to cookie handling conflicts.
+* **The Rule:** Authentication logic in all Server Actions must be handled by the **manual JWT Token Injection** method (using a custom client) which extracts the JWT from the cookie and injects it into the client's `Authorization` header. This isolates the database access from the session management crash.
+
+#### **12.3 Credential Storage (The Anti-Caching Rule)**
+We must eliminate all dependencies on the standard WordPress database cache for critical security data.
+* **Final Product Plan:** The official "Reverse Handshake" process will be updated to require the user to upload a **secure, non-web-accessible configuration file** (e.g., `.alphawoo-config.json`) containing the Store ID and API Key.
+* **Connector Logic:** The `AlphaWoo_API_Client` must be modified to read this local file via PHP's `file_get_contents()` instead of using the cache-dependent `get_option()` function.
