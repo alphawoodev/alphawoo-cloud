@@ -1,10 +1,9 @@
-import Link from 'next/link'
-import { redirect } from 'next/navigation'
-import { Plus, Store, Zap } from 'lucide-react'
-
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { createClient } from '@/lib/supabase/server'
+import { Plus, Store, Zap } from 'lucide-react'
+import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 export default async function StoresPage() {
   const supabase = await createClient()
@@ -52,16 +51,18 @@ export default async function StoresPage() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {stores.map((store: any) => (
-            <Card key={store.id} className="transition-colors hover:border-indigo-500">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{store.woocommerce_domain}</CardTitle>
-                <Zap className={`h-4 w-4 ${store.shadow_mode ? 'text-amber-500' : 'text-emerald-500'}`} />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{store.shadow_mode ? 'Shadow Mode' : 'Active'}</div>
-                <p className="mt-1 text-xs font-mono text-zinc-500">ID: {store.id.substring(0, 8)}...</p>
-              </CardContent>
-            </Card>
+            <Link key={store.id} href={`/app/stores/${store.id}`} className="block h-full">
+              <Card className="group h-full cursor-pointer transition-colors hover:border-indigo-500">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">{store.woocommerce_domain}</CardTitle>
+                  <Zap className={`h-4 w-4 ${store.shadow_mode ? 'text-amber-500' : 'text-emerald-500'}`} />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{store.shadow_mode ? 'Shadow Mode' : 'Active'}</div>
+                  <p className="mt-1 text-xs font-mono text-zinc-500">ID: {store.id.substring(0, 8)}...</p>
+                </CardContent>
+              </Card>
+            </Link>
           ))}
         </div>
       )}
