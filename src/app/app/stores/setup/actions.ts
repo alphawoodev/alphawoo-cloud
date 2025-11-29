@@ -1,9 +1,11 @@
 'use server'
 
-import { createClient } from '@/lib/supabase/server'
+import { createBrowserClient } from '@supabase/ssr'
 import { redirect } from 'next/navigation'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
+
+import { createClient } from '@/lib/supabase/server'
 
 /**
  * Handles the secure submission of new store credentials.
@@ -11,15 +13,16 @@ import { v4 as uuidv4 } from 'uuid'
  */
 export async function storeConnectAction(formData: FormData) {
   const domain = formData.get('domain') as string
-  const supabase = createClient()
 
   if (!domain) {
     console.error('Store connect validation failed: missing domain')
     return
   }
 
+  const supabaseSessionChecker = createClient()
+
   // 1. Get current authenticated user session
-  const { data: userSession, error: authError } = await supabase.auth.getSession()
+  const { data: userSession, error: authError } = await supabaseSessionChecker.auth.getSession()
 
   if (authError || !userSession.session) {
     redirect('/login')
@@ -27,8 +30,13 @@ export async function storeConnectAction(formData: FormData) {
 
   const userId = userSession.session.user.id
 
+  const supabaseStateless = createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
+
   // 2. Find the Organization ID for the current user
-  const { data: organization, error: orgError } = await supabase
+  const { data: organization, error: orgError } = await supabaseStateless
     .from('organizations')
     .select('id')
     .eq('owner_id', userId)
@@ -46,7 +54,7 @@ export async function storeConnectAction(formData: FormData) {
   const newApiKey = `awsk_${crypto.randomBytes(32).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`
 
   // 3. Securely insert the new store data
-  const { error: storeError } = await supabase.from('stores').insert([
+  const { error: storeError } = await supabaseStateless.from('stores').insert([
     {
       id: newStoreId,
       organization_id: organizationId,

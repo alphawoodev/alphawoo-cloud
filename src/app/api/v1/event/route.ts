@@ -1,6 +1,7 @@
 // src/app/api/v1/event/route.ts
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { Database } from '@/lib/database.types'
 import crypto from 'crypto'
 
 // The Ingestion API is strictly for Plugin traffic (Section 4)
@@ -57,7 +58,10 @@ export async function POST(request: Request) {
   const rawBodyToVerify = JSON.stringify(sortedPayload)
 
   // 4. Retrieve API Key from the Data SSOT (Now safe to do)
-  const supabase = createClient()
+  const supabase = createSupabaseClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  )
 
   const { data: storeData, error: dbError } = await supabase
     .from('stores')
