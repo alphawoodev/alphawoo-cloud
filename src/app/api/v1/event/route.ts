@@ -41,18 +41,19 @@ export async function POST(request: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
 
-  const { data: store, error: dbError } = await supabase
+  const { data: storeData, error: dbError } = await supabase
     .from('stores')
     .select('api_key')
     .eq('id', storeId)
-    .single()
-
-  if (dbError || !store) {
-    console.error(`Store lookup failed for ${storeId}:`, dbError?.message)
-    return NextResponse.json({ error: 'Unauthorized access.' }, { status: 401 })
+        
+  if (dbError || !storeData || storeData.length === 0) {
+    console.error('Store lookup failed:', dbError?.message);
+    // Log the error returned by Supabase
+    return NextResponse.json({ error: 'Unauthorized access (Store ID not found or RLS block).' }, { status: 401 });
   }
 
-  const apiKey = store.api_key
+  // Extract the API Key from the first (and only expected) result
+  const apiKey = storeData[0].api_key;
 
   // 5. HMAC Signature Verification (The core security logic)
   const expectedSignature = crypto
