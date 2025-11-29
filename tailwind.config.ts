@@ -1,17 +1,22 @@
 // tailwind.config.ts
 import type { Config } from 'tailwindcss';
-// 1. IMPORT THE PLUGIN HERE (ES Module Standard)
-import tailwindcssAnimate from 'tailwindcss-animate';
+// NOTE: We rely on 'require' syntax below for stability, 
+// so the import of 'tailwindcssAnimate' is technically unnecessary here, 
+// but is left for type clarity if needed elsewhere.
 
-const config = {
-  // CRITICAL: Ensure this path array covers all files, including src/
+const config: Config = {
+  // CRITICAL: Must be a single string for single-strategy use
+  // This supports the necessary Dark Mode functionality (Section 9)
+  darkMode: "class", 
+
+  // Combined and deduplicated content paths
   content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
+    './pages/**/*.{js,ts,jsx,tsx,mdx}',
+    './components/**/*.{js,ts,jsx,tsx,mdx}',
+    './app/**/*.{js,ts,jsx,tsx,mdx}',
     './src/**/*.{ts,tsx}',
   ],
-  darkMode: ['class'],
+  
   theme: {
     container: {
       center: true,
@@ -22,14 +27,14 @@ const config = {
     },
     extend: {
       colors: {
-        // Enforcing the Zinc Standard colors
+        // Enforcing the Zinc/Indigo Standard (Section 8)
         border: 'hsl(var(--border))',
         input: 'hsl(var(--input))',
         ring: 'hsl(var(--ring))',
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         primary: {
-          // Setting Primary Action to Indigo
+          // Primary Action/Trust: Indigo (hsl defined in global.css)
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',
         },
@@ -38,6 +43,7 @@ const config = {
           foreground: 'hsl(var(--secondary-foreground))',
         },
         destructive: {
+          // Destructive/Risk: Rose (Section 8)
           DEFAULT: 'hsl(var(--destructive))',
           foreground: 'hsl(var(--destructive-foreground))',
         },
@@ -79,8 +85,10 @@ const config = {
       },
     },
   },
-  // 2. USE THE IMPORTED PLUGIN HERE
-  plugins: [tailwindcssAnimate],
-} satisfies Config;
+  plugins: [
+    // Stable JS module loading resolves Turbopack/TS parsing issues
+    require('tailwindcss-animate'), 
+  ],
+};
 
 export default config;
