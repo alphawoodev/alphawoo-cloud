@@ -35,16 +35,33 @@ export async function POST(request: Request) {
 
   const apiKey = store.api_key
 
+  // 3. Prepare Payload for Verification (Remove security fields)
+  const payloadToSign = { ...payload }
+  delete payloadToSign.aw_store_id
+  delete payloadToSign.aw_signature
+  
+  const rawBodyToVerify = JSON.stringify(payloadToSign)
+
+
   // 4. HMAC Signature Verification (The core security logic)
-  // This validates the integrity and authenticity of the payload (Section 4)
-  const expectedSignature = crypto
+    const expectedSignature = crypto
     .createHmac('sha256', apiKey)
     .update(rawBody)
     .digest('hex')
 
+  // --- DEBUG LOGGING: CRITICAL DIAGNOSTIC STEP ---
+  // LOGGING IS NOW PLACED AFTER VARIABLE DEFINITIONS
+  console.log("DEBUG: --- HMAC CHECK ---");
+  console.log("DEBUG: Store ID:", storeId);
+  // Safely substring the raw body for logging
+  console.log("DEBUG: Raw Body to Verify:", rawBodyToVerify.substring(0, 100) + '...'); 
+  console.log("DEBUG: Expected Signature:", expectedSignature);
+  console.log("DEBUG: Received Signature:", signature);
+  console.log("DEBUG: --- END CHECK ---");
+  // ------------------------------------------------
+  
   if (expectedSignature !== signature) {
-    // The signature doesn't match the one we generated. Tampered or incorrect key.
-    console.warn(`HMAC Mismatch for Store ID: ${storeId}. Expected: ${expectedSignature}, Received: ${signature}`)
+    console.warn(`HMAC Mismatch for Store ID: ${storeId}. Payload Tampered.`)
     return NextResponse.json({ error: 'Signature verification failed.' }, { status: 403 })
   }
   
