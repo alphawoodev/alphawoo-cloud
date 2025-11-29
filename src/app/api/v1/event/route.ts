@@ -32,8 +32,14 @@ export async function POST(request: Request) {
   const payloadToSign = { ...payload }
   delete payloadToSign.aw_store_id
   delete payloadToSign.aw_signature
-  delete payloadToSign.aw_timestamp_utc;
-  const rawBodyToVerify = JSON.stringify(payloadToSign, Object.keys(payloadToSign).sort()); 
+  delete payloadToSign.aw_timestamp_utc
+  const sortedPayload = Object.keys(payloadToSign)
+    .sort()
+    .reduce<Record<string, any>>((acc, key) => {
+      acc[key] = payloadToSign[key]
+      return acc
+    }, {})
+  const rawBodyToVerify = JSON.stringify(sortedPayload)
 
   // 4. Retrieve API Key from the Data SSOT (Now safe to do)
   const supabase = createBrowserClient(
