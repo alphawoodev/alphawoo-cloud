@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation'
 import crypto from 'crypto'
 import { v4 as uuidv4 } from 'uuid'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient as createSupabaseServerClient } from '@/lib/supabase/server'
+import { getServerActionUser } from '@/lib/supabase/server-action-client'
 
 export async function storeConnectAction(formData: FormData) {
   const domain = formData.get('domain') as string
@@ -15,17 +16,8 @@ export async function storeConnectAction(formData: FormData) {
   }
 
   try {
-    const supabase = createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      redirect('/login')
-    }
-
+    const user = await getServerActionUser()
+    const supabase = createSupabaseServerClient()
     const userId = user.id
 
     const { data: organization, error: orgError } = await supabase
@@ -63,7 +55,14 @@ export async function storeConnectAction(formData: FormData) {
       `/app/stores/confirm?storeId=${newStoreId}&domain=${encodeURIComponent(domain)}&apiKey=${encodeURIComponent(newApiKey)}`,
     )
   } catch (error) {
+    const err = error as { message?: string }
+    const message = err?.message ?? ''
+
+    if (message.includes('token') || message.includes('Unauthorized')) {
+      redirect('/login')
+    }
+
     console.error('Critical Server Action Failure:', error)
-    redirect('/login')
+    return { success: false, error: 'A critical server error occurred during setup.' }
   }
 }
