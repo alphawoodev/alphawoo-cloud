@@ -1,29 +1,44 @@
 // src/app/api/v1/event/route.ts
 import { NextResponse } from 'next/server'
-import { createBrowserClient } from '@supabase/ssr' 
+import { createBrowserClient } from '@supabase/ssr'
 import crypto from 'crypto'
 
 // The Ingestion API is strictly for Plugin traffic (Section 4)
 export async function POST(request: Request) {
-  
+  const headerStoreId = request.headers.get('x-alphawoo-store-id')
+  const headerSignature = request.headers.get('x-alphawoo-signature')
+
+  if (!headerStoreId || !headerSignature) {
+    console.warn('Rejected request missing AlphaWoo headers', {
+      userAgent: request.headers.get('user-agent') || 'unknown',
+      contentType: request.headers.get('content-type') || 'unknown',
+    })
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
+
   // 1. Read Body and Parse Payload IMMEDIATELY
   const rawBody = await request.text()
-  
-  let payload: Record<string, any>; 
+
+  let payload: Record<string, any>
   try {
     payload = JSON.parse(rawBody)
   } catch (e) {
-    // If the request body isn't valid JSON, reject it
-    console.warn("DEBUG: Invalid JSON payload received. Payload start:", rawBody.substring(0, 50));
+    console.warn('Invalid JSON payload received', {
+      userAgent: request.headers.get('user-agent') || 'unknown',
+      snippet: rawBody.substring(0, 120),
+    })
     return NextResponse.json({ error: 'Invalid JSON payload' }, { status: 400 })
   }
 
-  // 2. Extract Security Credentials from the Body (FINAL FIX: Bypassing headers)
-  const storeId = payload.aw_store_id as string
-  const signature = payload.aw_signature as string
-  
+  // 2. Extract Security Credentials from the Body, fallback to headers
+  const storeId = (payload.aw_store_id as string) || headerStoreId
+  const signature = (payload.aw_signature as string) || headerSignature
+
   if (!storeId || !signature) {
-    // This is the correct guard rail against missing *body* credentials
+    console.warn('Rejected payload missing aw_store_id or aw_signature fields', {
+      storeId,
+      signaturePresent: Boolean(signature),
+    })
     return NextResponse.json({ error: 'Missing security payload data (aw_store_id/aw_signature)' }, { status: 400 })
   }
 
