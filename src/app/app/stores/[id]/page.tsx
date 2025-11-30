@@ -7,6 +7,7 @@ import { ArrowLeft, Key } from 'lucide-react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { DeleteStoreButton } from './components/DeleteStoreButton'
 import { ShadowModeToggle } from './components/ShadowModeToggle'
 import StoreMetrics from './components/StoreMetrics'
 
@@ -38,11 +39,14 @@ export default async function StoreDetailsPage({ params }: StorePageProps) {
   return (
     <div className="container mx-auto max-w-4xl px-4 py-10">
       <div className="mb-6">
-        <Button variant="ghost" asChild className="pl-0 hover:bg-transparent hover:text-indigo-600">
-          <Link href="/app/stores">
-            <ArrowLeft className="mr-2 h-4 w-4" /> Back to Stores
-          </Link>
-        </Button>
+        <div className="flex items-start justify-between">
+          <Button variant="ghost" asChild className="pl-0 hover:bg-transparent hover:text-indigo-600">
+            <Link href="/app/stores">
+              <ArrowLeft className="mr-2 h-4 w-4" /> Back to Stores
+            </Link>
+          </Button>
+          <DeleteStoreButton storeId={store.id} />
+        </div>
         <div className="mt-2 flex items-center justify-between">
           <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">{store.woocommerce_domain}</h1>
           <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-mono text-zinc-500 dark:bg-zinc-800">

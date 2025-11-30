@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { redirect } from 'next/navigation'
 
 import { createClient } from '@/lib/supabase/server'
 import { getServerActionUser } from '@/lib/supabase/server-action-client'
@@ -42,5 +43,44 @@ export async function toggleShadowModeAction(storeId: string, newShadowModeState
 
     console.error('[ShadowMode] Unexpected Server Action Error:', error)
     return { success: false, error: 'An unexpected error occurred.' }
+  }
+}
+
+export async function deleteStoreAction(storeId: string) {
+  try {
+    const user = await getServerActionUser()
+    const supabase = await createClient()
+
+    const { data: organization, error: orgError } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_id', user.id)
+      .limit(1)
+      .single()
+
+    if (orgError || !organization) {
+      console.error('[DeleteStore] Organization lookup failed:', orgError?.message)
+      return { success: false, error: 'Organization not found.' }
+    }
+
+    const { error: deleteError } = await supabase
+      .from('stores')
+      .delete()
+      .eq('id', storeId)
+      .eq('organization_id', organization.id)
+
+    if (deleteError) {
+      console.error(`[DeleteStore] Failure for store ${storeId}:`, deleteError.message)
+      return { success: false, error: 'Database deletion failed.' }
+    }
+
+    revalidatePath('/app/stores')
+    redirect('/app/stores')
+  } catch (error: any) {
+    if (error?.message?.includes('Unauthorized')) {
+      redirect('/login')
+    }
+    console.error('[DeleteStore] Unexpected Server Action Error:', error)
+    return { success: false, error: 'An unexpected error occurred during deletion.' }
   }
 }
