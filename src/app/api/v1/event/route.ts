@@ -87,6 +87,7 @@ export async function POST(request: Request) {
       currency: payload.currency,
       store_shadow_mode: shadow_mode, // Injected from DB
       event_type: payload.event_type,
+      aw_signature: payload.aw_signature,
       // Pass through deep data if needed, but Blueprint didn't explicitly ask for it
       deep_data: payload.deep_data || {}
     }
