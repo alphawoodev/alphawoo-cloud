@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { AlertTriangle, Loader2, Trash2 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
@@ -23,6 +24,7 @@ interface DeleteStoreButtonProps {
 }
 
 export function DeleteStoreButton({ storeId }: DeleteStoreButtonProps) {
+  const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -31,10 +33,17 @@ export function DeleteStoreButton({ storeId }: DeleteStoreButtonProps) {
     setError(null)
     try {
       const result = await deleteStoreAction(storeId)
-      if (result && result.success === false) {
-        setError(result.error || 'Failed to delete store.')
+      if (result?.success) {
+        router.push('/app/stores')
+        router.refresh()
+        return
       }
-    } catch (e) {
+      setError(result?.error || 'Failed to delete store.')
+    } catch (error) {
+      const digest = typeof (error as any)?.digest === 'string' ? (error as any).digest : null
+      if (digest?.includes('NEXT_REDIRECT')) {
+        throw error
+      }
       setError('Deletion failed. Check permissions.')
     } finally {
       setIsLoading(false)

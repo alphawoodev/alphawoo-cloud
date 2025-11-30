@@ -75,7 +75,7 @@ export async function deleteStoreAction(storeId: string) {
     }
 
     revalidatePath('/app/stores')
-    redirect('/app/stores')
+    return { success: true, message: 'Store deleted.' }
   } catch (error: any) {
     if (error && typeof error.digest === 'string' && error.digest.includes('NEXT_REDIRECT')) {
       throw error
