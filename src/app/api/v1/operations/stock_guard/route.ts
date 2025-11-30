@@ -125,6 +125,7 @@ export async function POST(request: Request) {
 
 /**
  * Reserve stock for the cart items
+ * Uses Supabase RPC function to create reservations
  * 
  * @param supabase Supabase client
  * @param storeId Store ID
@@ -137,50 +138,50 @@ async function reserveStock(
     payload: StockReservationRequest
 ): Promise<{ success: boolean; reservation_id?: string; error_detail?: string }> {
 
-    // TODO: Implement actual stock reservation logic
-    // This is a placeholder implementation
+    try {
+        const reservationIds: string[] = []
 
-    // In production, this would:
-    // 1. Check current stock levels in the database
-    // 2. Verify sufficient stock for all items
-    // 3. Create a temporary reservation record
-    // 4. Return reservation ID for tracking
+        // Create a reservation for each item in the cart
+        for (const item of payload.items) {
+            const quantity = parseInt(item.quantity, 10)
+            const productId = parseInt(item.product_id, 10)
+            const variationId = parseInt(item.variation_id || '0', 10)
 
-    // For now, we'll simulate a successful reservation
-    const reservationId = `res_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            // Call the create_stock_reservation RPC function
+            const { data: reservationId, error } = await supabase
+                .rpc('create_stock_reservation', {
+                    _store_id: storeId,
+                    _cart_hash: payload.cart_hash,
+                    _product_id: productId,
+                    _variation_id: variationId,
+                    _quantity: quantity,
+                    _sku: item.sku || ''
+                })
 
-    // Simulate stock check
-    for (const item of payload.items) {
-        const quantity = parseInt(item.quantity, 10)
+            if (error) {
+                console.error('Stock reservation error:', error)
+                return {
+                    success: false,
+                    error_detail: `Failed to reserve stock for product ${item.product_id}: ${error.message}`
+                }
+            }
 
-        // Placeholder: In production, query actual stock levels
-        // const { data: stockData } = await supabase
-        //   .from('inventory')
-        //   .select('available_quantity')
-        //   .eq('store_id', storeId)
-        //   .eq('product_id', item.product_id)
-        //   .single()
-
-        // For now, assume stock is available
-        if (quantity > 1000) { // Arbitrary limit for demo
-            return {
-                success: false,
-                error_detail: `Insufficient stock for product ${item.product_id}`
+            if (reservationId) {
+                reservationIds.push(reservationId)
             }
         }
-    }
 
-    // TODO: Insert reservation record into database
-    // await supabase.from('stock_reservations').insert({
-    //   id: reservationId,
-    //   store_id: storeId,
-    //   cart_hash: payload.cart_hash,
-    //   items: payload.items,
-    //   expires_at: new Date(Date.now() + 15 * 60 * 1000) // 15 min expiry
-    // })
+        // Return the first reservation ID (all items share the same cart_hash)
+        return {
+            success: true,
+            reservation_id: reservationIds[0] || `cart_${payload.cart_hash}`
+        }
 
-    return {
-        success: true,
-        reservation_id: reservationId
+    } catch (error: any) {
+        console.error('Stock reservation exception:', error)
+        return {
+            success: false,
+            error_detail: 'Stock reservation failed due to system error'
+        }
     }
 }
