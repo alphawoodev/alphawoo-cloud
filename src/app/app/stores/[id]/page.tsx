@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { ShadowModeToggle } from './components/ShadowModeToggle'
+import StoreMetrics from './components/StoreMetrics'
 
 interface StorePageProps {
   params: Promise<{ id: string }>
@@ -51,6 +52,7 @@ export default async function StoreDetailsPage({ params }: StorePageProps) {
       </div>
 
       <div className="grid gap-6">
+        <StoreMetrics storeId={store.id} />
         <ShadowModeToggle initialShadowMode={store.shadow_mode} storeId={store.id} />
 
         <Card className="border-indigo-200 bg-indigo-50/10 dark:border-indigo-900 dark:bg-indigo-950/10">
