@@ -1,6 +1,7 @@
 'use server'
 
 import crypto from 'crypto'
+import { revalidatePath } from 'next/cache'
 import { redirect } from 'next/navigation'
 import { v4 as uuidv4 } from 'uuid'
 
@@ -13,8 +14,6 @@ export async function storeConnectAction(formData: FormData) {
     console.error('Store connect validation failed: missing domain')
     return
   }
-
-  let successRedirectUrl: string | null = null
 
   try {
     const user = await getServerActionUser()
@@ -62,6 +61,7 @@ export async function storeConnectAction(formData: FormData) {
 
     const encodedDomain = encodeURIComponent(domain)
     const encodedKey = encodeURIComponent(newApiKey)
+    revalidatePath('/app/stores')
     redirect(`/app/stores/confirm?storeId=${newStoreId}&domain=${encodedDomain}&apiKey=${encodedKey}`)
   } catch (error: any) {
     if (error?.message?.includes('Unauthorized')) {
