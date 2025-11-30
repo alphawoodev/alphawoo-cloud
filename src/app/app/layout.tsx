@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { Zap } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/server'
+import { LogoutButton } from '@/components/auth/LogoutButton'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -26,7 +27,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </Link>
           </div>
           <div className="flex flex-1 items-center justify-between space-x-2 md:justify-end">
-            <div className="text-sm text-zinc-500">{user.email}</div>
+            <div className="flex items-center space-x-4">
+              <div className="hidden text-sm text-zinc-500 sm:block">{user.email}</div>
+              <LogoutButton />
+            </div>
           </div>
         </div>
       </header>
