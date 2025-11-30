@@ -62,7 +62,7 @@ export async function storeConnectAction(formData: FormData) {
 
     const encodedDomain = encodeURIComponent(domain)
     const encodedKey = encodeURIComponent(newApiKey)
-    successRedirectUrl = `/app/stores/confirm?storeId=${newStoreId}&domain=${encodedDomain}&apiKey=${encodedKey}`
+    redirect(`/app/stores/confirm?storeId=${newStoreId}&domain=${encodedDomain}&apiKey=${encodedKey}`)
   } catch (error: any) {
     if (error?.message?.includes('Unauthorized')) {
       redirect('/login')
@@ -70,9 +70,5 @@ export async function storeConnectAction(formData: FormData) {
 
     console.error('Critical Server Action Failure:', error)
     return
-  }
-
-  if (successRedirectUrl) {
-    redirect(successRedirectUrl)
   }
 }
