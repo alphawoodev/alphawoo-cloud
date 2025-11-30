@@ -77,6 +77,9 @@ export async function deleteStoreAction(storeId: string) {
     revalidatePath('/app/stores')
     redirect('/app/stores')
   } catch (error: any) {
+    if (error && typeof error.digest === 'string' && error.digest.includes('NEXT_REDIRECT')) {
+      throw error
+    }
     if (error?.message?.includes('Unauthorized')) {
       redirect('/login')
     }
