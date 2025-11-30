@@ -1,7 +1,7 @@
 # ALPHAWOO PROJECT BIBLE
-**Current Phase:** V3 Rewrite (Execution)
-**Last Updated:** 11-29-2025 (POST-SESSION CRASH FIXES)
-**Version:** 7.1 (THE FINAL CANONICALIZATION)
+**Current Phase:** Phase 0: Revenue Leakage Detector (MVP Build)
+**Last Updated:** 11-30-2025 (STRATEGIC RESET: SHADOW MVP)
+**Version:** 8.0 (THE PHASE 0 CANONICALIZATION)
 
 ## 1. Brand Identity (CRITICAL)
 * **Name:** **AlphaWoo** (CamelCase).
@@ -15,9 +15,10 @@
 ## 2. The North Star
 **Product Definition:** AlphaWoo is a "Revenue Insurance Platform" for WooCommerce that rescues lost sales via Hybrid Cloud technology.
 **Core Value:** We solve "Shipping Shock," "Ghost Orders," and "Margin Erosion" via a lightweight connector + heavy-duty cloud.
-**Marketing Stance:** **"Headless-Ready & API-First."**
-* We target the high-performance sector (DTC Brands & Enterprise) where plugin latency is unacceptable.
-* **Performance Promise:** Our API-first architecture handles 46k+ requests/hour with zero impact on site load, unlike legacy plugins that bloat the database.
+**Go-To-Market Strategy (The Trojan Horse):**
+1.  **Free Install:** User installs plugin as a "Revenue Leakage Detector" (Shadow Mode).
+2.  **The Reveal:** After 7 days, Dashboard displays "Potential Revenue Rescued" (Money left on the table).
+3.  **The Upsell:** User activates paid "Revenue Rescue" to recover that money.
 
 ## 3. The Source of Truth (SSOT Hierarchy)
 * **Strategic SSOT:** **This File (The Project Bible).** If a feature or tone contradicts this file, this file wins.
@@ -27,161 +28,129 @@
 ## 4. Technical Stack (The Hard Constraints)
 * **Frontend:** Next.js 14+ (App Router) + Tailwind CSS.
 * **UI Components:** Shadcn UI (Radix Primitives).
-* **Interaction Layer:** `framer-motion` (Micro-interactions) + `sonner` (Premium Toasts).
 * **Authentication:** Supabase Auth (Native integration).
     * **Note:** All Server Actions use the **Manual JWT Injection** method to prevent the fatal library crash. (See 12.2)
 * **Billing:** Stripe (SaaS Subscriptions).
-    * **Requirement:** Must support Agency Billing (One Org pays for multiple Stores).
+    * **Requirement:** Must support **Agency Billing** (One Org pays for multiple Stores).
     * **Self-Serve:** Use **Stripe Customer Portal** for invoices/upgrades.
 * **Backend:** Next.js API Routes (Serverless) on Vercel.
-* **Security:** **HMAC Signature Verification (Body-Based).** Plugin payloads must contain the signature in the JSON body (`aw_signature`), not HTTP headers, to bypass WAFs. (See 12.1)
+* **Security:** **HMAC Signature Verification (Body-Based).** Plugin payloads must contain the signature in the JSON body (`aw_signature`). (See 12.1)
 * **Database:** Supabase (Postgres).
     * **Schema:** Organization -> Stores (Multi-Currency + Affiliate Tracking) -> Customers -> Carts. **Soft Delete** is used for the `stores` table. (See 12.3)
-* **Integration Layer (NEW):** **Make.com (iPaaS).** We use Make.com for all delayed sequencing (e.g., 30-min sleep) and Postmark integration.
-* **Queue:** Upstash (QStash/Redis) for "Sliding Window" delays.
+* **Integration Layer:** **Make.com (iPaaS).** We use Make.com for all delayed sequencing (e.g., 30-min sleep) and Postmark integration.
+* **Repositories (NEW):**
+    * **`alphawoo-cloud`:** (Private) Next.js/Vercel. Contains business logic, secrets, and API.
+    * **`alphawoo-connector`:** (Public) PHP/WordPress Plugin. "Dumb Pipe" only.
 * **Email:** Postmark (Transactional Stream). **MUST** have DKIM/DMARC verified.
-* **Internal Analytics:** PostHog (Product usage & Session replay).
-* **Plugin:** Minimal PHP "Connector" only. No local processing.
 * **Infrastructure Domains:**
     * **Marketing:** `alphawoo.com` (Root). **NEVER** use `www`.
     * **SaaS Dashboard:** `app.alphawoo.com` (The secure console).
     * **Ingestion API:** `api.alphawoo.com` (Strictly for Plugin traffic).
-    * **Development:** `*.alphawoo.dev` (Staging and Sandbox stores).
 
 ## 5. Key Feature Logic
+* **Shadow Mode (The MVP Core):**
+    * **Logic:** If `store.shadow_mode = true`:
+        1. Capture Event.
+        2. Wait 30 mins (Make.com).
+        3. **Log the Revenue** to `reporting_metrics` (via `/v1/metrics/log_shadow`).
+        4. **Suppress the Email** (Stop flow).
+    * **Goal:** Populate the "Pain Dashboard" to drive conversion.
 * **Pending Payment Rescue:**
     * Trigger: `woocommerce_order_status_pending` OR `woocommerce_order_status_on-hold` AND `created_via='checkout'`.
     * Action: Wait 30 mins -> Send Email.
 * **Live Listener (The "Cookie" Aware Script):**
     * JS listens to `#billing_phone` and `#billing_email` on blur.
-    * **Compliance:** MUST check "TCPA Consent" box AND respect `wp_consent_api` (Marketing Cookies) before initializing.
-* **Shadow Mode (The Confidence Builder):**
-    * **Logic:** If `store.shadow_mode = true`, process all events and "fake" the rescue in the database, but **suppress the email**.
-    * **UI:** Dashboard displays "Potential Revenue Rescued" to encourage activation.
-* **Hybrid Data:**
-    * Plugin captures "Deep Data" (Custom Fields) that the REST API cannot see.
+    * **Compliance:** MUST check "TCPA Consent" box AND respect `wp_consent_api` via the `/wp-admin/admin-ajax.php` gating endpoint before initializing JS.
 * **Agent-Native (WP 6.9 Abilities API):**
     * **Strict Version Gating:** All Agent logic must be wrapped in `version_compare($wp_version, '6.9', '>=')`.
-    * **Philosophy:** The Plugin acts as a proxy, exposing Cloud Intelligence to local AI Agents.
-    * **Registered Ability 1:** `read_revenue_pulse` (Returns today's rescued revenue & site uptime stats).
-    * **Registered Ability 2:** `analyze_ghost_orders` (Returns analysis of pending payment patterns).
-    * **Registered Ability 3:** `trigger_profit_guard` (Allows Agent to remotely toggle strict coupon blocking).
+    * **Abilities:** `read_revenue_pulse`, `analyze_ghost_orders`, `trigger_profit_guard`.
+    * **NEW:** `analyze_carrier_options` (consults Cloud for DDP rates).
 
 ## 6. The AlphaWoo Suite Roadmap (The 8 Pillars)
-**Architectural Rule:** All solutions utilize the single "AlphaWoo Connect" plugin and Unified Customer Profile.
+**Phase 0: The Leakage Detector (CURRENT PRIORITY)**
+* **Onboarding Bridge:** One-click provisioning from Plugin to Cloud (Creates Org/Store).
+* **Shadow Accounting:** Make.com logic to sum "missed" revenue without sending emails.
+* **Pain Dashboard:** The "Free Tier" UI showing missed revenue and "Activate" CTA.
 
-**Phase 1: Revenue Rescue (Core)**
-* **Cart Saver:** Recovers abandoned carts & "Ghost Orders" (Pending Payments) via multi-channel sequences.
-* **Profit Guard (Pricing Engine):**
-    * *Core Logic:* **Intelligent Offer Decisioning.**
-    * *Mechanism:* Uses predictive CLV modeling to determine the *minimum viable discount* needed to convert. Blocks loss-leader coupons and targets high-value carts with VIP offers.
-* **Site Pulse:** RUM monitoring for checkout speeds & downtime alerts.
+**Phase 1: Revenue Rescue (Paid Tier) — [ARCHITECTURALLY COMPLETE]**
+* **Cart Saver:** Recovers abandoned carts & "Ghost Orders".
+* **Profit Guard:** Intelligent Offer Decisioning (API Defined).
+* **Site Pulse:** RUM monitoring.
 
-**Phase 2: Operational Efficiency (The "Shipping Shock" Fix)**
-* **Logistics Guard (Global):**
-    * *Problem:* High shipping costs & surprise duties cause 60%+ of abandonments.
-    * *Solution:* **DDP/DDU Calculator + AI Carrier Selection.** Automatically calculates duties/taxes at checkout and selects the optimal carrier to prevent "Shipping Shock".
-* **Stock Guard (Oversell Protection):**
-    * *Focus:* Strictly prevents "Ghost Orders" caused by inventory lag across channels.
-    * *Mechanism:* Real-time reservation of stock during the checkout session.
+**Phase 2: Operational Efficiency — [ARCHITECTURALLY COMPLETE]**
+* **Logistics Guard (Global):** DDP/DDU Calculator + AI Carrier Selection (Schema `geo_rules` & API defined).
+* **Stock Guard:** Real-time oversell protection (Hook `woocommerce_before_checkout_process` & Schema `stock_reservations` defined).
 
-**Phase 3: Retention & Resolution**
-* **Resolution Agent (AI):**
-    * *Focus:* LLM-driven agent specifically for **Post-Purchase Defense** (WISMO, Returns, Address Changes).
-    * *Goal:* Prevent chargebacks and reduce support ticket volume.
-* **Best Customer Spotlight:** Auto-segmentation of VIPs and "At Risk" customers using the CLV model.
-* **Weekly Store Report:** The "CEO Digest" summarizing Rescued Revenue + Operational Efficiency gains.
+**Phase 3: Retention & Resolution — [ARCHITECTURALLY COMPLETE]**
+* **Resolution Agent:** AI Post-Purchase Defense (Schema `customer_clv_metrics` & API defined).
+* **Best Customer Spotlight:** CLV Segmentation.
+* **Weekly Store Report:** The "CEO Digest" summarizing Rescued Revenue.
 
 ## 7. Deployment & Monetization Strategy (The Hybrid Model)
-**Strategy:** We combine scalable SaaS revenue with high-ticket "Setup" revenue to fund development.
-
-* **1. The SaaS Subscription (Recurring):**
-    * **Model:** Outcome-Based Pricing.
-    * **Base:** Platform Access (Site Pulse + Data Retention).
-    * **Metered:** Charged per "Rescued Cart" or "Successful AI Resolution."
-* **2. The "Concierge" Service (High-Ticket One-Time):**
-    * **Offering:** "Revenue Ops Implementation" ($2,500+).
-    * **Deliverable:** We configure the AlphaWoo suite + Custom Make.com workflows for the client (e.g., syncing data to their ERP/CRM).
-    * **Why:** This funds cash flow and locks in enterprise clients.
-* **3. The Agency Enablement:**
-    * We provide the "Blueprints" for the above service to our Agency Partners, allowing them to sell the setup fee to *their* clients.
-* **4. The Distribution Moat:**
-    * **Goal:** Secure official **WooCommerce Marketplace Partnership**.
-    * **Why:** The "Woo Seal of Approval" is the ultimate trust signal for high-value merchants.
+**Strategy:** The "Trojan Horse."
+* **Step 1:** Free plugin install -> Shadow Mode (7 Days).
+* **Step 2:** Dashboard Reveal ("You lost $4k last week").
+* **Step 3:** Stripe Conversion via Agency Billing (`organizations` table) to unlock features.
 
 ## 8. Visual & Interaction DNA (The "Structural Alpha" Standard)
 * **Goal:** The UI must feel "Engineered" and look like a bank vault, not a casino.
-* **The "Zinc" Palette:**
-    * **Backgrounds:** `zinc-50` to `white` (Light), `zinc-950` (Dark). **NO pure black (#000000).**
-    * **Borders:** `border-zinc-200` (Light), `border-zinc-800` (Dark).
-* **The Brand Gradient (Indigo -> Emerald):**
-    * **Primary Action/Trust:** `indigo-600` (#4F46E5).
-    * **Revenue/Profit:** `emerald-600` (#059669) or `teal-600`. **NO NEON.**
-    * **Destructive/Risk:** `rose-600`.
-* **The Logo (Structural Alpha):**
-    * A solid, geometric 'A' with **flat feet** (Stability) and **rounded top** (Friendliness).
-    * Uses the Indigo -> Emerald gradient.
-* **Responsive Mastery:**
-    * **Thumb-Friendly:** All interactive targets must be at least 44px height.
-    * **No Horizontal Scroll:** Complex tables must adapt to "Card View" on mobile.
-* **Data Density:**
-    * Use `Geist Mono` or `JetBrains Mono` for all IDs, IPs, and Financials.
-* **Zero Layout Shift:**
-    * Always use `<Skeleton />` loaders.
+* **The "Zinc" Palette:** `zinc-50` to `white` (Light), `zinc-950` (Dark). **NO pure black.**
+* **The Brand Gradient:** Indigo-600 (Trust) -> Emerald-600 (Profit).
+* **Typography:** `Geist Mono` or `JetBrains Mono` for all IDs and Financials.
 
 ## 9. Development Rules
 * **No "Plugin Bloat":** Never add UI or Logic to the PHP plugin. It is a dumb pipe.
-* **Agency First:** Database must always support Multi-tenant (One Org = Many Stores).
+* **Agency First:** Database must always support Multi-tenant (Organization > Stores).
 * **Code Quality:** All UI components must support Dark Mode by default.
-* **Backwards Compatibility:** Agent-Native features must degrade gracefully.
-
-## 10. Operational Execution (The 3-Day Sprint)
-* **Day 1: The Foundation & The Funeral** (Complete)
-* **Day 2: The Connector (Plugin)** (Complete)
-* **Day 3: The First Flow** (Complete)
-
-## 11. The AI Organization (Team Structure & Tooling)
-* **Context Bridge:** This file (`AlphaWoo Project Bible.md`) is the API connecting all Gems. It must be uploaded to every session.
 
 ## 12. Architectural Lessons Learned (The Hard Rules)
-This section outlines constraints derived from production conflicts between Node.js, PHP, and external environments.
-
 #### **12.1 HMAC Canonicalization Standard (PHP ↔ Node.js)**
-To ensure the HMAC signature always matches, we enforce the following **absolute standards** for payload signing:
-* **Payload Construction:** Only include core transactional data (e.g., `order_id`, `order_total`, `currency`) in the signed payload. Omit all dynamic fields like timestamps (`aw_timestamp_utc`) and complex, nested objects (`deep_data`) from the signing payload, as these cause byte discrepancies.
-* **Data Type Canonicalization:** All unique identifiers and numeric values used in the signature must be explicitly cast to strings (`strval()`) on the PHP side to prevent float/integer discrepancies.
-* **Encoding Flags (PHP Side):** The PHP connector must use native `json_encode()` with mandatory flags to mirror Node.js's output precisely:
-    * `ksort($array_to_sign)`: Must be applied to the top-level array before encoding.
-    * **Flags:** `JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_FORCE_OBJECT` (This is required to force consistent object rendering).
+* **Payload Construction:** Only include core transactional data. Omit dynamic timestamps and nested objects.
+* **Data Type Canonicalization:** Explicitly cast to strings (`strval()`).
+* **Encoding Flags:** `JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_FORCE_OBJECT`.
 
-#### **12.2 Next.js Server Action Authentication (The Anti-Crash Rule)**
-The standard `createServerClient` and `supabase.auth.getUser()` calls must be treated as **crash-prone** within Vercel Server Actions due to cookie handling conflicts.
-* **The Rule:** Authentication logic in all Server Actions must be handled by the **manual JWT Token Injection** method (using a custom client) which extracts the JWT from the cookie and injects it into the client's `Authorization` header. This isolates the database access from the session management crash.
+#### **12.2 Next.js Server Action Authentication**
+* **The Rule:** Authentication logic in all Server Actions must use **Manual JWT Token Injection** to prevent Vercel crashes.
 
 #### **12.3 Data Consistency & Deletion Strategy**
-* **Soft Delete:** The primary deletion strategy for the **`stores`** table must be **Soft Delete** (using a `deleted_at` timestamp). This preserves the **Unified Customer Profile** and historical revenue metrics, allowing for store re-activation without data loss.
-* **No Manual Cleanup:** We will not rely on the user to manually clean up database fields after a cloud operation. The **WP-CLI Cleanup Command** is the required developer solution for local database hygiene.
+* **Soft Delete:** The `stores` table uses **Soft Delete** (`deleted_at`).
+* **No Manual Cleanup:** Use the **WP-CLI Cleanup Command** (`wp alphawoo clean all`) for local hygiene.
 
 ## 13. Email Strategy (The Hybrid Template Model)
 **Strategy:** We adopt a **Hybrid, Next.js-Dominated** approach for email templating.
+* **Templates:** React Email Components (Tailwind + Zinc Palette).
+* **Rendering:** Next.js generates HTML string (`/v1/emails/render_rescue_email`).
+* **Delivery:** Postmark Transactional Stream.
 
-### 13.1 The Decision: Custom Next.js Templates with React Email
-We design and manage all email templates within our Next.js application using a modern framework like **React Email** (or similar).
-*   **Aesthetics ("Structural Alpha"):** Allows us to use Tailwind CSS and our exact Zinc/Indigo/Emerald color palettes within a familiar component architecture.
-*   **Data Density:** Enables strict enforcement of `Geist Mono` for financial and ID data.
-*   **Performance Promise:** We keep complex decision-making logic (Profit Guard) local to the Cloud, then send a clean HTML string to Postmark.
-*   **Operational Efficiency:** React components make it easier to manage variables, layouts, and translations compared to Postmark's native templating (Mustachio).
+---
 
-### 13.2 The Postmark Role (Delivery Backbone)
-We use Postmark strictly for its **deliverability infrastructure**, not for templating.
-*   **Delivery Vehicle:** Postmark is the mandatory delivery engine.
-*   **Security:** It handles DKIM/DMARC verification and provides the **Transactional Stream** for high inbox placement.
-*   **The Payload:** We send the final, rendered HTML string directly to the Postmark API (via Next.js or Make.com).
+## 14. 🚀 PHASE 0: LEAKAGE DETECTOR CHECKLIST (MVP)
 
-### 13.3 The Optimized Process Flow
-1.  **Trigger:** `woocommerce_order_status_pending` event hits Next.js Ingestion API.
-2.  **Delay:** Next.js -> Make.com -> 30-Minute Sleep.
-3.  **Decision Point (NEW):** Make.com calls `api/v1/decisions/profit_guard` in Next.js.
-4.  **Generation (NEW):** Make.com calls `api/v1/emails/render_rescue_email`.
-    *   This route uses React Email to take the Offer Decision (e.g., "VIP 20% Discount") and `deep_data` to render the final, pixel-perfect HTML string.
-5.  **Delivery:** Make.com takes the HTML string and sends it via the Postmark module to the customer.
+This is the immediate roadmap to a functional "Shadow Mode" MVP. Launch is blocked until these are complete.
+
+### 1. 🌉 The Onboarding Bridge (Plugin <-> Cloud)
+| Task | Status | Requirement |
+| :--- | :--- | :--- |
+| **Provisioning API** | ☐ Undone | `POST /api/v1/onboarding/provision`: Creates Org, Store (Shadow=True), and returns API Keys to plugin. |
+| **Plugin "Connect" UI** | ☐ Undone | Admin screen in WP to trigger provisioning and save the returned API keys. |
+| **Magic Link Auth** | ☐ Undone | "Go to Dashboard" button in plugin logs user into Next.js app without password friction. |
+
+### 2. 🕵️ Shadow Accounting (The Logic)
+| Task | Status | Requirement |
+| :--- | :--- | :--- |
+| **Shadow Metric API** | ☐ Undone | `POST /api/v1/metrics/log_shadow`: Increments `shadow_revenue_total_cents` for the store. |
+| **Make.com Shadow Flow** | ☐ Undone | Logic update: If `shadow_mode=true` -> Call Metric API -> Stop. |
+
+### 3. 📊 The Pain Dashboard (The UI)
+| Task | Status | Requirement |
+| :--- | :--- | :--- |
+| **Free Tier View** | ☐ Undone | Dashboard view that hides graphs and shows big "Potential Revenue" counter. |
+| **Ghost Order List** | ☐ Undone | Anonymized/Blurred list of carts captured. |
+| **Activate CTA** | ☐ Undone | Button linking to Stripe Checkout to unlock features. |
+
+### 4. 🎨 Critical Assets
+| Task | Status | Requirement |
+| :--- | :--- | :--- |
+| **Marketing Landing** | ☐ Undone | Simple page (`alphawoo.com`) explaining "Free Revenue Audit". |
+| **Logo Assets** | ☐ Undone | SVG Logo for Dashboard/Plugin/Emails. |
+| **Email Templates** | ☐ Undone | **Revenue Rescue React Component** built (needed for Upgrade Preview). |
