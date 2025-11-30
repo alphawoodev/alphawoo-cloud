@@ -64,7 +64,7 @@ export async function storeConnectAction(formData: FormData) {
     revalidatePath('/app/stores')
     redirect(`/app/stores/confirm?storeId=${newStoreId}&domain=${encodedDomain}&apiKey=${encodedKey}`)
   } catch (error: any) {
-    if (error?.digest?.includes('NEXT_REDIRECT')) {
+    if (error && typeof error.digest === 'string' && error.digest.startsWith('NEXT_REDIRECT')) {
       throw error
     }
 
