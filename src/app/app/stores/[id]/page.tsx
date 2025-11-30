@@ -7,6 +7,8 @@ import { ArrowLeft, Key } from 'lucide-react'
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
+import { ShadowModeToggle } from './components/ShadowModeToggle'
+
 interface StorePageProps {
   params: Promise<{ id: string }>
 }
@@ -49,6 +51,8 @@ export default async function StoreDetailsPage({ params }: StorePageProps) {
       </div>
 
       <div className="grid gap-6">
+        <ShadowModeToggle initialShadowMode={store.shadow_mode} storeId={store.id} />
+
         <Card className="border-indigo-200 bg-indigo-50/10 dark:border-indigo-900 dark:bg-indigo-950/10">
           <CardHeader>
             <div className="flex items-center space-x-2 text-indigo-600 dark:text-indigo-400">
