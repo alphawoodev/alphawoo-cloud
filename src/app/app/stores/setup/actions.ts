@@ -48,7 +48,15 @@ export async function storeConnectAction(formData: FormData) {
     ])
 
     if (storeError) {
-      console.error('Store insertion failed:', storeError.message)
+      console.error('DEBUG: Store insertion failed.')
+      console.error('DEBUG: Postgres Code:', storeError.code)
+      console.error('DEBUG: Postgres Message:', storeError.message)
+
+      // Optional: map common constraint violation for observability without changing return type
+      if (storeError.code === '23505') {
+        console.error('DEBUG: Unique constraint violated for domain/api key.')
+      }
+
       return
     }
 
