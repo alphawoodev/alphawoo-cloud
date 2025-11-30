@@ -19,7 +19,7 @@ export default async function StoresPage() {
     .eq('owner_id', user.id)
     .single();
 
-  const stores = organization?.stores || [];
+  const stores = (organization?.stores || []).filter((store: any) => !store.deleted_at);
 
   return (
     <div className="container mx-auto py-10 px-4">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { use, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ClipboardCopy, Key, Zap } from 'lucide-react'
 
@@ -18,16 +18,16 @@ import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 
 interface ConfirmPageProps {
-  searchParams: {
+  searchParams: Promise<{
     storeId?: string
     domain?: string
     apiKey?: string
-  }
+  }>
 }
 
 export default function ConfirmPage({ searchParams }: ConfirmPageProps) {
   const router = useRouter()
-  const { storeId, domain, apiKey } = searchParams
+  const { storeId, domain, apiKey } = use(searchParams)
 
   const handleCopy = useCallback(async (value?: string) => {
     if (!value) {

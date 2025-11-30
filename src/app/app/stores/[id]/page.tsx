@@ -30,6 +30,7 @@ export default async function StoreDetailsPage({ params }: StorePageProps) {
     .select('*, organizations!inner(owner_id)')
     .eq('id', id)
     .eq('organizations.owner_id', user.id)
+    .is('deleted_at', null)
     .single()
 
   if (error || !store) {

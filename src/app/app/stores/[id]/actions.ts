@@ -65,7 +65,7 @@ export async function deleteStoreAction(storeId: string) {
 
     const { error: deleteError } = await supabase
       .from('stores')
-      .delete()
+      .update({ deleted_at: new Date().toISOString() } as any)
       .eq('id', storeId)
       .eq('organization_id', organization.id)
 

@@ -9,11 +9,22 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Zap } from 'lucide-react'
+import { Zap, AlertTriangle } from 'lucide-react'
 import { storeConnectAction } from './actions'
 import { Separator } from '@/components/ui/separator'
 
-export default function StoreSetupPage() {
+type SearchParams = { error?: string }
+
+const errorMessages: Record<string, string> = {
+  domain_exists: 'This WooCommerce domain is already connected to your account.',
+  missing_domain: 'Please enter a domain before submitting the form.',
+  store_create_failed: 'Something went wrong while creating the store. Try again.',
+}
+
+export default async function StoreSetupPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
+  const resolved = await searchParams
+  const activeError = resolved?.error ? errorMessages[resolved.error] ?? 'Unable to connect store.' : null
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-zinc-950">
       <Card className="w-full max-w-lg border-zinc-200 dark:border-zinc-800">
@@ -51,6 +62,12 @@ export default function StoreSetupPage() {
               </p>
             </div>
           </CardContent>
+          {activeError && (
+            <div className="mx-6 mb-4 flex items-start space-x-2 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4" />
+              <span>{activeError}</span>
+            </div>
+          )}
           <CardFooter>
             <Button
               type="submit"

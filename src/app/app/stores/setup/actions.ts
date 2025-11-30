@@ -12,7 +12,7 @@ export async function storeConnectAction(formData: FormData) {
   const domain = formData.get('domain') as string
   if (!domain) {
     console.error('Store connect validation failed: missing domain')
-    return
+    redirect('/app/stores/setup?error=missing_domain')
   }
 
   try {
@@ -36,33 +36,77 @@ export async function storeConnectAction(formData: FormData) {
     const newStoreId = uuidv4()
     const newApiKey = `awsk_${crypto.randomBytes(32).toString('base64').replace(/[^a-zA-Z0-9]/g, '').substring(0, 40)}`
 
-    const { error: storeError } = await supabase.from('stores').insert([
-      {
-        id: newStoreId,
-        organization_id: organizationId,
-        woocommerce_domain: domain,
-        api_key: newApiKey,
-        shadow_mode: true,
-      },
-    ])
+    const { data: existingStoreData, error: existingLookupError } = await supabase
+      .from('stores')
+      .select('id, deleted_at, organization_id')
+      .eq('woocommerce_domain', domain)
+      .maybeSingle()
 
-    if (storeError) {
-      console.error('DEBUG: Store insertion failed.')
-      console.error('DEBUG: Postgres Code:', storeError.code)
-      console.error('DEBUG: Postgres Message:', storeError.message)
+    const existingStore = existingStoreData as {
+      id: string
+      deleted_at: string | null
+      organization_id: string
+    } | null
 
-      // Optional: map common constraint violation for observability without changing return type
-      if (storeError.code === '23505') {
-        console.error('DEBUG: Unique constraint violated for domain/api key.')
+    if (existingLookupError && existingLookupError.code !== 'PGRST116') {
+      console.error('Existing store lookup failed:', existingLookupError.message)
+      redirect('/app/stores/setup?error=store_create_failed')
+    }
+
+    if (existingStore && existingStore.organization_id !== organizationId && !existingStore.deleted_at) {
+      redirect('/app/stores/setup?error=domain_exists')
+    }
+
+    let targetStoreId = newStoreId
+    if (existingStore && existingStore.deleted_at) {
+      targetStoreId = existingStore.id
+      const { error: reviveError } = await supabase
+        .from('stores')
+        .update(
+          {
+            deleted_at: null,
+            api_key: newApiKey,
+            organization_id: organizationId,
+            shadow_mode: true,
+          } as any,
+        )
+        .eq('id', targetStoreId)
+        .eq('organization_id', organizationId)
+
+      if (reviveError) {
+        console.error('Store revival failed:', reviveError.message)
+        redirect('/app/stores/setup?error=store_create_failed')
       }
+    } else if (!existingStore) {
+      const { error: storeError } = await supabase.from('stores').insert([
+        {
+          id: targetStoreId,
+          organization_id: organizationId,
+          woocommerce_domain: domain,
+          api_key: newApiKey,
+          shadow_mode: true,
+        },
+      ])
 
-      return
+      if (storeError) {
+        console.error('DEBUG: Store insertion failed.')
+        console.error('DEBUG: Postgres Code:', storeError.code)
+        console.error('DEBUG: Postgres Message:', storeError.message)
+
+        if (storeError.code === '23505') {
+          redirect('/app/stores/setup?error=domain_exists')
+        }
+
+        redirect('/app/stores/setup?error=store_create_failed')
+      }
+    } else {
+      redirect('/app/stores/setup?error=domain_exists')
     }
 
     const encodedDomain = encodeURIComponent(domain)
     const encodedKey = encodeURIComponent(newApiKey)
     revalidatePath('/app/stores')
-    redirect(`/app/stores/confirm?storeId=${newStoreId}&domain=${encodedDomain}&apiKey=${encodedKey}`)
+    redirect(`/app/stores/confirm?storeId=${targetStoreId}&domain=${encodedDomain}&apiKey=${encodedKey}`)
   } catch (error: any) {
     const isNextRedirect = error && typeof error.digest === 'string' && error.digest.includes('NEXT_REDIRECT')
     if (isNextRedirect) {
