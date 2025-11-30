@@ -80,11 +80,13 @@ export async function POST(request: Request) {
   if (makeWebhookUrl) {
     // Construct the specific payload requested by the Blueprint
     const makePayload = {
-      cart_id: payload.order_id, // Mapping order_id to cart_id as requested
-      store_id: storeId,
+      cart_id: payload.cart_id || payload.order_id, // Mapping order_id to cart_id as requested
+      store_id: payload.aw_store_id || storeId,
       customer_email: payload.customer_email,
       total_amount: payload.order_total,
       currency: payload.currency,
+      woo_status: payload.woo_status,
+      order_id: payload.order_id,
       store_shadow_mode: shadow_mode, // Injected from DB
       event_type: payload.event_type,
       aw_signature: payload.aw_signature,
