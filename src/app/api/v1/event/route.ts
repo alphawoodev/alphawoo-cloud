@@ -2,9 +2,14 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import crypto from 'crypto'
 
+type StoreConfig = {
+  api_key: string
+  shadow_mode: boolean
+}
+
 export async function POST(request: Request) {
   const rawBody = await request.text()
-  
+
   let payload: Record<string, any>
   try {
     payload = JSON.parse(rawBody)
@@ -26,7 +31,7 @@ export async function POST(request: Request) {
   delete payloadToSign.aw_store_id
   delete payloadToSign.aw_signature
   delete payloadToSign.aw_timestamp_utc
-  
+
   // Remove "deep_data" if present, as PHP excludes it from signing
   if (payloadToSign.deep_data) {
     delete payloadToSign.deep_data
@@ -44,16 +49,15 @@ export async function POST(request: Request) {
   const rawBodyToVerify = JSON.stringify(sortedPayload)
 
   // 2. Secure Database Lookup
-  // Use Service Role Key to bypass RLS and read sensitive API Key + Shadow Mode
+  // Use PostgreSQL Function (RPC) to securely fetch store config
+  // This avoids exposing the Service Role Key (Bible: Security Hardening)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   )
 
   const { data: storeData, error: dbError } = await supabase
-    .from('stores')
-    .select('api_key, shadow_mode')
-    .eq('id', storeId)
+    .rpc('get_store_config', { _store_id: storeId })
     .single()
 
   if (dbError || !storeData) {
@@ -61,7 +65,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized access.' }, { status: 401 })
   }
 
-  const { api_key, shadow_mode } = storeData
+  const { api_key, shadow_mode } = storeData as StoreConfig
 
   // 3. Verify HMAC Signature
   const expectedSignature = crypto.createHmac('sha256', api_key).update(rawBodyToVerify).digest('hex')
@@ -84,7 +88,7 @@ export async function POST(request: Request) {
       store_shadow_mode: shadow_mode, // Injected from DB
       event_type: payload.event_type,
       // Pass through deep data if needed, but Blueprint didn't explicitly ask for it
-      deep_data: payload.deep_data || {} 
+      deep_data: payload.deep_data || {}
     }
 
     try {

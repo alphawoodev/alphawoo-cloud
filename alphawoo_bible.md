@@ -161,3 +161,27 @@ The standard `createServerClient` and `supabase.auth.getUser()` calls must be tr
 #### **12.3 Data Consistency & Deletion Strategy**
 * **Soft Delete:** The primary deletion strategy for the **`stores`** table must be **Soft Delete** (using a `deleted_at` timestamp). This preserves the **Unified Customer Profile** and historical revenue metrics, allowing for store re-activation without data loss.
 * **No Manual Cleanup:** We will not rely on the user to manually clean up database fields after a cloud operation. The **WP-CLI Cleanup Command** is the required developer solution for local database hygiene.
+
+## 13. Email Strategy (The Hybrid Template Model)
+**Strategy:** We adopt a **Hybrid, Next.js-Dominated** approach for email templating.
+
+### 13.1 The Decision: Custom Next.js Templates with React Email
+We design and manage all email templates within our Next.js application using a modern framework like **React Email** (or similar).
+*   **Aesthetics ("Structural Alpha"):** Allows us to use Tailwind CSS and our exact Zinc/Indigo/Emerald color palettes within a familiar component architecture.
+*   **Data Density:** Enables strict enforcement of `Geist Mono` for financial and ID data.
+*   **Performance Promise:** We keep complex decision-making logic (Profit Guard) local to the Cloud, then send a clean HTML string to Postmark.
+*   **Operational Efficiency:** React components make it easier to manage variables, layouts, and translations compared to Postmark's native templating (Mustachio).
+
+### 13.2 The Postmark Role (Delivery Backbone)
+We use Postmark strictly for its **deliverability infrastructure**, not for templating.
+*   **Delivery Vehicle:** Postmark is the mandatory delivery engine.
+*   **Security:** It handles DKIM/DMARC verification and provides the **Transactional Stream** for high inbox placement.
+*   **The Payload:** We send the final, rendered HTML string directly to the Postmark API (via Next.js or Make.com).
+
+### 13.3 The Optimized Process Flow
+1.  **Trigger:** `woocommerce_order_status_pending` event hits Next.js Ingestion API.
+2.  **Delay:** Next.js -> Make.com -> 30-Minute Sleep.
+3.  **Decision Point (NEW):** Make.com calls `api/v1/decisions/profit_guard` in Next.js.
+4.  **Generation (NEW):** Make.com calls `api/v1/emails/render_rescue_email`.
+    *   This route uses React Email to take the Offer Decision (e.g., "VIP 20% Discount") and `deep_data` to render the final, pixel-perfect HTML string.
+5.  **Delivery:** Make.com takes the HTML string and sends it via the Postmark module to the customer.

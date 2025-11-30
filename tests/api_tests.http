@@ -1,0 +1,35 @@
+# AlphaWoo V3 API Tests
+# Test the new endpoints locally
+
+### Test 1: Profit Guard Decision API
+POST http://localhost:3000/api/v1/decisions/profit_guard
+Content-Type: application/json
+
+{
+  "cart_id": "test-cart-123",
+  "store_id": "test-store-456",
+  "total_amount": "250.00",
+  "currency": "USD",
+  "customer_email": "test@example.com"
+}
+
+###
+
+### Test 2: Email Render API
+POST http://localhost:3000/api/v1/emails/render_rescue_email
+Content-Type: application/json
+
+{
+  "cart_id": "test-cart-123",
+  "customer_email": "test@example.com",
+  "total_amount": "250.00",
+  "currency": "USD",
+  "decision": {
+    "offer_type": "vip",
+    "discount_percentage": 20,
+    "coupon_code": "VIP20",
+    "message": "Exclusive 20% discount for high-value customers"
+  }
+}
+
+###
