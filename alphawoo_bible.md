@@ -1,7 +1,7 @@
 # ALPHAWOO PROJECT BIBLE
 **Current Phase:** V3 Rewrite (Execution)
-**Last Updated:** 11-29-2025 (POST-HMAC FIX)
-**Version:** 7.0 (THE CANONICALIZATION IMPERATIVE)
+**Last Updated:** 11-29-2025 (POST-SESSION CRASH FIXES)
+**Version:** 7.1 (THE FINAL CANONICALIZATION)
 
 ## 1. Brand Identity (CRITICAL)
 * **Name:** **AlphaWoo** (CamelCase).
@@ -10,7 +10,6 @@
 * **Voice:** Professional, technical, authoritative (Store Owner to Store Owner). Avoid marketing fluff; focus on ROI and Architecture.
 * **The Logo:** **"The Structural Alpha."**
     * *Visual:* A solid, geometric letter 'A' with a **flat base** (stability) and **soft rounded top** (approachability).
-    * *Meaning:* It represents "Infrastructure" and "Foundation."
     * *Color:* Gradient from **Deep Indigo** (Trust) to **Emerald Teal** (Profit).
 
 ## 2. The North Star
@@ -21,7 +20,6 @@
 * **Performance Promise:** Our API-first architecture handles 46k+ requests/hour with zero impact on site load, unlike legacy plugins that bloat the database.
 
 ## 3. The Source of Truth (SSOT Hierarchy)
-To prevent "feature creep" and "spaghetti code," we adhere to three strict sources of truth:
 * **Strategic SSOT:** **This File (The Project Bible).** If a feature or tone contradicts this file, this file wins.
 * **Data SSOT:** **The Unified Customer Profile (`customers` table).** We do not build separate tables for different modules. A customer is a customer.
 * **Deployment SSOT:** **The `alphawoo-connector` Plugin.** The plugin is the only gateway. Feature flags in the cloud (`stores.active_modules`) determine functionality, not the user's plugin list.
@@ -38,8 +36,8 @@ To prevent "feature creep" and "spaghetti code," we adhere to three strict sourc
 * **Backend:** Next.js API Routes (Serverless) on Vercel.
 * **Security:** **HMAC Signature Verification (Body-Based).** Plugin payloads must contain the signature in the JSON body (`aw_signature`), not HTTP headers, to bypass WAFs. (See 12.1)
 * **Database:** Supabase (Postgres).
-    * **Schema:** Organization -> Stores (Multi-Currency + Affiliate Tracking) -> Customers -> Carts.
-* **Integration Layer (NEW):** **Make.com (iPaaS).** We provide official Make.com blueprints for Agencies to extend our logic.
+    * **Schema:** Organization -> Stores (Multi-Currency + Affiliate Tracking) -> Customers -> Carts. **Soft Delete** is used for the `stores` table. (See 12.3)
+* **Integration Layer (NEW):** **Make.com (iPaaS).** We use Make.com for all delayed sequencing (e.g., 30-min sleep) and Postmark integration.
 * **Queue:** Upstash (QStash/Redis) for "Sliding Window" delays.
 * **Email:** Postmark (Transactional Stream). **MUST** have DKIM/DMARC verified.
 * **Internal Analytics:** PostHog (Product usage & Session replay).
@@ -112,7 +110,7 @@ To prevent "feature creep" and "spaghetti code," we adhere to three strict sourc
     * **Why:** The "Woo Seal of Approval" is the ultimate trust signal for high-value merchants.
 
 ## 8. Visual & Interaction DNA (The "Structural Alpha" Standard)
-**Goal:** The UI must feel "Engineered" and look like a bank vault, not a casino.
+* **Goal:** The UI must feel "Engineered" and look like a bank vault, not a casino.
 * **The "Zinc" Palette:**
     * **Backgrounds:** `zinc-50` to `white` (Light), `zinc-950` (Dark). **NO pure black (#000000).**
     * **Borders:** `border-zinc-200` (Light), `border-zinc-800` (Dark).
@@ -138,30 +136,19 @@ To prevent "feature creep" and "spaghetti code," we adhere to three strict sourc
 * **Backwards Compatibility:** Agent-Native features must degrade gracefully.
 
 ## 10. Operational Execution (The 3-Day Sprint)
-**Goal:** Establish data flow and kill the legacy application.
-
-* **Day 1: The Foundation & The Funeral**
-    * **V2 Sunset:** Disable new signups for the legacy app immediately.
-    * **SaaS Repo:** Initialize Next.js 14 + Shadcn + Tailwind. Implement "Zinc/Indigo" defaults.
-    * **Database:** Run V3 Schema migration (including `affiliate_id` and `shadow_mode`).
-* **Day 2: The Connector (Plugin)**
-    * **Boilerplate:** Create `alphawoo-connector`.
-    * **Security:** Implement HMAC Signature signing on all outbound requests.
-    * **Auth:** Implement the "Reverse Handshake."
-* **Day 3: The First Flow**
-    * **Cloud Listener:** Create Next.js API route to receive and **Verify HMAC**.
-    * **Integration:** Connect Make.com Webhook trigger (Proof of Concept).
-    * **Delivery:** Send the first text-only "Rescue Email."
+* **Day 1: The Foundation & The Funeral** (Complete)
+* **Day 2: The Connector (Plugin)** (Complete)
+* **Day 3: The First Flow** (Complete)
 
 ## 11. The AI Organization (Team Structure & Tooling)
-**Context Bridge:** This file (`AlphaWoo Project Bible.md`) is the API connecting all Gems. It must be uploaded to every session.
+* **Context Bridge:** This file (`AlphaWoo Project Bible.md`) is the API connecting all Gems. It must be uploaded to every session.
 
 ## 12. Architectural Lessons Learned (The Hard Rules)
 This section outlines constraints derived from production conflicts between Node.js, PHP, and external environments.
 
 #### **12.1 HMAC Canonicalization Standard (PHP ↔ Node.js)**
 To ensure the HMAC signature always matches, we enforce the following **absolute standards** for payload signing:
-* **Payload Construction:** Only include core transactional data (e.g., `order_id`, `order_total`, `currency`) in the signed payload. Omit all dynamic fields like timestamps (`created_at_utc`) and complex, nested objects (`deep_data`) from the signing payload, as these cause byte discrepancies.
+* **Payload Construction:** Only include core transactional data (e.g., `order_id`, `order_total`, `currency`) in the signed payload. Omit all dynamic fields like timestamps (`aw_timestamp_utc`) and complex, nested objects (`deep_data`) from the signing payload, as these cause byte discrepancies.
 * **Data Type Canonicalization:** All unique identifiers and numeric values used in the signature must be explicitly cast to strings (`strval()`) on the PHP side to prevent float/integer discrepancies.
 * **Encoding Flags (PHP Side):** The PHP connector must use native `json_encode()` with mandatory flags to mirror Node.js's output precisely:
     * `ksort($array_to_sign)`: Must be applied to the top-level array before encoding.
@@ -171,7 +158,6 @@ To ensure the HMAC signature always matches, we enforce the following **absolute
 The standard `createServerClient` and `supabase.auth.getUser()` calls must be treated as **crash-prone** within Vercel Server Actions due to cookie handling conflicts.
 * **The Rule:** Authentication logic in all Server Actions must be handled by the **manual JWT Token Injection** method (using a custom client) which extracts the JWT from the cookie and injects it into the client's `Authorization` header. This isolates the database access from the session management crash.
 
-#### **12.3 Credential Storage (The Anti-Caching Rule)**
-We must eliminate all dependencies on the standard WordPress database cache for critical security data.
-* **Final Product Plan:** The official "Reverse Handshake" process will be updated to require the user to upload a **secure, non-web-accessible configuration file** (e.g., `.alphawoo-config.json`) containing the Store ID and API Key.
-* **Connector Logic:** The `AlphaWoo_API_Client` must be modified to read this local file via PHP's `file_get_contents()` instead of using the cache-dependent `get_option()` function.
+#### **12.3 Data Consistency & Deletion Strategy**
+* **Soft Delete:** The primary deletion strategy for the **`stores`** table must be **Soft Delete** (using a `deleted_at` timestamp). This preserves the **Unified Customer Profile** and historical revenue metrics, allowing for store re-activation without data loss.
+* **No Manual Cleanup:** We will not rely on the user to manually clean up database fields after a cloud operation. The **WP-CLI Cleanup Command** is the required developer solution for local database hygiene.
