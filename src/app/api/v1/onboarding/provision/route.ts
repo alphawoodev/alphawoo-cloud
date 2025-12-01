@@ -16,49 +16,42 @@ export async function POST(req: NextRequest) {
         }
 
         const tempPassword = uuidv4()
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        const { data: userData, error: createError } = await supabase.auth.admin.createUser({
             email: admin_email,
             password: tempPassword,
-            options: {
-                data: { full_name: 'Store Admin' },
-                emailRedirectTo: site_url
-            }
+            email_confirm: true,
+            user_metadata: { full_name: 'Store Admin' }
         })
 
-        let userId = authData.user?.id
+        let userId = userData.user?.id
 
-        if (authError) {
-            console.error('Supabase Auth Error:', authError.message)
+        if (createError) {
+            console.error('Supabase Admin Create Error:', createError.message)
 
-            if (authError.message.includes('already registered') || authError.status === 422) {
-                const { data: users, error: listError } = await supabase.auth.admin.listUsers()
-
-                if (listError) {
-                    console.error('Admin List Error:', listError)
-                    return NextResponse.json({ error: `Auth failed: ${listError.message}` }, { status: 500 })
-                }
-
+            if (createError.message.includes('already been registered') || createError.status === 422) {
+                const { data: users } = await supabase.auth.admin.listUsers()
                 const existingUser = users.users.find(
                     user => user.email?.toLowerCase() === admin_email.toLowerCase()
                 )
 
                 if (!existingUser) {
-                    return NextResponse.json({
-                        error: 'User collision detected but ID not found. Check Supabase Console.'
-                    }, { status: 500 })
+                    return NextResponse.json(
+                        { error: 'User exists but ID not found.' },
+                        { status: 500 }
+                    )
                 }
 
                 userId = existingUser.id
             } else {
                 return NextResponse.json(
-                    { error: `User creation failed: ${authError.message}` },
+                    { error: `User creation failed: ${createError.message}` },
                     { status: 400 }
                 )
             }
         }
 
         if (!userId) {
-            return NextResponse.json({ error: 'User creation returned no ID and no error.' }, { status: 500 })
+            return NextResponse.json({ error: 'User creation returned no ID.' }, { status: 500 })
         }
 
         const { data: org, error: orgError } = await supabase
