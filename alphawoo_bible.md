@@ -23,7 +23,7 @@
 * **Deployment SSOT:** **The `alphawoo-connector` Plugin.**
 
 ## 4. Technical Stack (The Hard Constraints)
-* **Frontend:** Next.js 14+ (App Router).
+* **Frontend:** Next.js 16.0.5 (App Router).
 * **Authentication:** Supabase Auth (First-Party OTP Strategy).
 * **Security:** **HMAC Signature Verification (Body-Based).**
 * **Database:** Supabase (Postgres). **Organization -> Stores** Multi-tenancy.

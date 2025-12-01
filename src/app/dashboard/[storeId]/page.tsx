@@ -1,12 +1,16 @@
 import { createClient } from '@/lib/supabase/server'
-// import { redirect } from "next/navigation"; // <--- COMMENTED OUT
+// import { redirect } from "next/navigation"; // intentionally not redirecting to show debug info
 
+// FIX: In Next.js 16, params is a Promise
 interface PageProps {
-    params: { storeId: string }
+    params: Promise<{ storeId: string }>
 }
 
 export default async function DashboardPage({ params }: PageProps) {
-    const storeId = params.storeId
+    // FIX: You MUST await the params in Next.js 16
+    const resolvedParams = await params
+    const storeId = resolvedParams.storeId
+
     const supabase = await createClient()
 
     // 1. Auth Check
@@ -27,10 +31,10 @@ export default async function DashboardPage({ params }: PageProps) {
         .single()
 
     // --- DEBUGGING BLOCK ---
+    // If this hits, at least 'Target Store ID' will now be visible (not blank)
     if (error || !store) {
         console.error('Access Denied Error:', error)
 
-        // STOP THE REDIRECT LOOP. SHOW THE ERROR.
         return (
             <div className="p-10 font-mono text-sm bg-zinc-50 min-h-screen">
                 <div className="max-w-2xl mx-auto border-2 border-red-500 bg-white p-8 rounded-lg shadow-xl">
@@ -50,16 +54,8 @@ export default async function DashboardPage({ params }: PageProps) {
                         <div>
                             <strong className="block text-zinc-500">Database Error:</strong>
                             <pre className="bg-red-50 p-2 rounded text-red-700 whitespace-pre-wrap">
-                                {JSON.stringify(error, null, 2) || 'No SQL Error (Store check returned null)'}
+                                {JSON.stringify(error, null, 2)}
                             </pre>
-                        </div>
-
-                        <div className="pt-4 border-t mt-4">
-                            <p className="text-zinc-600">Possible Causes:</p>
-                            <ul className="list-disc pl-5 mt-2 space-y-1 text-zinc-500">
-                                <li>Row Level Security (RLS) is still blocking you.</li>
-                                <li>The Organization Owner ID in the DB doesn&apos;t match your User ID.</li>
-                            </ul>
                         </div>
                     </div>
                 </div>
@@ -68,6 +64,7 @@ export default async function DashboardPage({ params }: PageProps) {
     }
     // --- END DEBUGGING BLOCK ---
 
+    // 3. SUCCESS: Render the Dashboard
     return (
         <div className="p-8">
             <header className="mb-8 border-b border-zinc-200 pb-6">
@@ -78,6 +75,9 @@ export default async function DashboardPage({ params }: PageProps) {
                 <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
                     <h3 className="text-sm font-medium text-zinc-500">Revenue Leaked</h3>
                     <div className="mt-2 text-3xl font-bold text-zinc-900">$0.00</div>
+                    <span className="inline-flex mt-4 items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-800">
+                        Monitoring Active
+                    </span>
                 </div>
             </div>
         </div>
