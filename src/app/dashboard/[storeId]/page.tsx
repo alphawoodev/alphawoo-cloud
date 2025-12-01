@@ -8,6 +8,11 @@ type DashboardPageProps = {
 }
 
 export default async function DashboardPage({ params }: DashboardPageProps) {
+    const storeId = params?.storeId
+    if (!storeId) {
+        return <div className="p-8">Store not specified</div>
+    }
+
     const supabase = await createClient()
 
     const {
@@ -15,14 +20,14 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     } = await supabase.auth.getUser()
 
     if (!user) {
-        redirect(`/login?next=/dashboard/${params.storeId}`)
+        redirect(`/login?next=/dashboard/${storeId}`)
     }
 
     const { data: storeLink } = await supabase
         .from('store_users' as any)
         .select('role')
         .eq('user_id', user.id)
-        .eq('store_id', params.storeId)
+        .eq('store_id', storeId)
         .single()
 
     if (!storeLink) {
@@ -32,7 +37,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     const { data: store } = await supabase
         .from('stores')
         .select('shadow_mode, currency_code')
-        .eq('id', params.storeId)
+        .eq('id', storeId)
         .single()
 
     if (!store) {
@@ -42,7 +47,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     const { data: metrics } = await supabase
         .from('reporting_metrics' as any)
         .select('shadow_revenue_total_cents')
-        .eq('store_id', params.storeId)
+        .eq('store_id', storeId)
         .order('reporting_week', { ascending: false })
         .limit(1)
         .single()
@@ -50,7 +55,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
     const { data: recentCarts } = await supabase
         .from('carts' as any)
         .select('created_at, total_amount_cents, currency')
-        .eq('store_id', params.storeId)
+        .eq('store_id', storeId)
         .order('created_at', { ascending: false })
         .limit(5)
 
