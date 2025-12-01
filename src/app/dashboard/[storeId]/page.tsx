@@ -1,4 +1,3 @@
-import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import ShadowView from '@/components/dashboard/shadow-view'
 import SetPasswordBanner from '@/components/dashboard/set-password-banner'
@@ -8,9 +7,13 @@ type DashboardPageProps = {
 }
 
 export default async function DashboardPage({ params }: DashboardPageProps) {
-    const storeId = params?.storeId
+    const storeId = params.storeId
     if (!storeId) {
-        return <div className="p-8">Store not specified</div>
+        return (
+            <div className="p-8 text-red-600">
+                Error: Store ID missing from URL.
+            </div>
+        )
     }
 
     const supabase = await createClient()
@@ -19,9 +22,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
         data: { user }
     } = await supabase.auth.getUser()
 
-    if (!user) {
-        redirect(`/login?next=/dashboard/${storeId}`)
-    }
+    if (!user) return null
 
     const { data: storeLink } = await supabase
         .from('store_users' as any)
@@ -73,14 +74,14 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
                     <p className="text-zinc-500">
                         Store ID:{' '}
                         <code className="text-xs bg-zinc-200 dark:bg-zinc-800 p-1 rounded font-mono">
-                            {params.storeId}
+                            {storeId}
                         </code>
                     </p>
                 </header>
 
                 {store.shadow_mode ? (
                     <ShadowView
-                        storeId={params.storeId}
+                        storeId={storeId}
                         currencyCode={store.currency_code}
                         totalLostCents={totalLost}
                         ghostCarts={(recentCarts as any[]) || []}
