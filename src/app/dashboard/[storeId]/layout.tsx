@@ -4,12 +4,13 @@ import { createClient } from '@/lib/supabase/server'
 
 interface LayoutProps {
     children: ReactNode
-    params: { storeId: string }
+    params: { storeId: string } | Promise<{ storeId: string }>
 }
 
 export default async function StoreLayout({ children, params }: LayoutProps) {
-    // Read the dynamic segment directly to avoid undefined params
-    const storeId = params?.storeId
+    // Support both plain and promised params (Next.js typing variants)
+    const resolvedParams = await Promise.resolve(params)
+    const storeId = resolvedParams?.storeId
 
     if (!storeId) {
         return (
