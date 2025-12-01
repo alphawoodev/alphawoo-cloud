@@ -8,20 +8,21 @@ interface LayoutProps {
 }
 
 export default async function StoreLayout({ children, params }: LayoutProps) {
-    // Capture the ID directly from the URL params
+    // Debug Log: Check Vercel logs to see what we received
     const resolvedParams = await Promise.resolve(params)
+    console.log('StoreLayout Params:', resolvedParams)
+
     const storeId = resolvedParams?.storeId
 
     if (!storeId) {
         return (
-            <div className="flex h-screen items-center justify-center bg-red-50 text-red-700">
-                <div className="rounded-lg border border-red-200 bg-white p-8 shadow-lg">
-                    <h1 className="text-xl font-bold">Deployment Check Failed</h1>
-                    <p className="mt-2">The application could not read the Store ID from the URL.</p>
-                    <p className="mt-4 text-xs font-mono bg-zinc-100 p-2">
-                        URL Params Received: {JSON.stringify(params)}
-                    </p>
-                </div>
+            <div className="p-10 font-mono text-red-600">
+                <h1 className="text-xl font-bold">Location Error</h1>
+                <p>This file is running, but cannot find the Store ID.</p>
+                <p>
+                    Ensure this file is located at: <code>app/dashboard/[storeId]/layout.tsx</code>
+                </p>
+                <p>Current Params received: {JSON.stringify(resolvedParams)}</p>
             </div>
         )
     }
