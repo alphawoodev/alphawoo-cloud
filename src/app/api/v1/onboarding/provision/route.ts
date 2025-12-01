@@ -7,12 +7,18 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const corsHeaders = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version',
+}
+
 export async function POST(req: NextRequest) {
     try {
         const { admin_email, site_url, currency, store_name } = await req.json()
 
         if (!admin_email || !site_url) {
-            return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+            return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers: corsHeaders })
         }
 
         const cleanUrl = site_url.replace(/\/$/, '')
@@ -54,7 +60,7 @@ export async function POST(req: NextRequest) {
                                 dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${fullStore.id}`,
                                 message: 'AlphaWoo Re-Connected'
                             },
-                            { status: 200 }
+                            { status: 200, headers: corsHeaders }
                         )
                     }
                 }
@@ -64,7 +70,7 @@ export async function POST(req: NextRequest) {
                 {
                     error: 'This store URL is already registered to another organization. Please contact support to transfer ownership.'
                 },
-                { status: 409 }
+                { status: 409, headers: corsHeaders }
             )
         }
 
@@ -90,7 +96,7 @@ export async function POST(req: NextRequest) {
                 if (!existingUser) {
                     return NextResponse.json(
                         { error: 'User exists but ID not found.' },
-                        { status: 500 }
+                        { status: 500, headers: corsHeaders }
                     )
                 }
 
@@ -98,13 +104,13 @@ export async function POST(req: NextRequest) {
             } else {
                 return NextResponse.json(
                     { error: `User creation failed: ${createError.message}` },
-                    { status: 400 }
+                    { status: 400, headers: corsHeaders }
                 )
             }
         }
 
         if (!userId) {
-            return NextResponse.json({ error: 'User creation returned no ID.' }, { status: 500 })
+            return NextResponse.json({ error: 'User creation returned no ID.' }, { status: 500, headers: corsHeaders })
         }
 
         const { data: org, error: orgError } = await supabase
@@ -122,7 +128,7 @@ export async function POST(req: NextRequest) {
             console.error('Org Creation Error:', orgError)
             return NextResponse.json(
                 { error: `Org creation failed: ${orgError.message}` },
-                { status: 500 }
+                { status: 500, headers: corsHeaders }
             )
         }
 
@@ -145,7 +151,7 @@ export async function POST(req: NextRequest) {
             console.error('Store Creation Error:', storeError)
             return NextResponse.json(
                 { error: `Store creation failed: ${storeError.message}` },
-                { status: 500 }
+                { status: 500, headers: corsHeaders }
             )
         }
 
@@ -164,13 +170,20 @@ export async function POST(req: NextRequest) {
                 dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${store.id}`,
                 message: 'AlphaWoo Connected: Shadow Mode Active'
             },
-            { status: 201 }
+            { status: 201, headers: corsHeaders }
         )
     } catch (error: any) {
         console.error('Provisioning Exception:', error)
         return NextResponse.json(
             { error: `Internal Server Error: ${error.message}` },
-            { status: 500 }
+            { status: 500, headers: corsHeaders }
         )
     }
+}
+
+export async function OPTIONS(req: NextRequest) {
+    return new NextResponse(null, {
+        status: 200,
+        headers: corsHeaders,
+    })
 }
