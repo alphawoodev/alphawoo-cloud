@@ -1,28 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createClient } from '@supabase/supabase-js'
 import { v4 as uuidv4 } from 'uuid'
 
-let supabaseServerClient: SupabaseClient | null = null
-
-function getSupabaseClient(): SupabaseClient {
-    if (!supabaseServerClient) {
-        const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-        const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-
-        if (!url || !serviceKey) {
-            throw new Error('Supabase credentials missing for provisioning endpoint.')
-        }
-
-        supabaseServerClient = createClient(url, serviceKey)
-    }
-
-    return supabaseServerClient
-}
+const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function POST(req: NextRequest) {
     try {
-        const body = await req.json()
-        const { admin_email, site_url, currency, store_name } = body || {}
+        const { admin_email, site_url, currency, store_name } = await req.json()
 
         if (!admin_email || !site_url) {
             return NextResponse.json(
@@ -31,10 +18,8 @@ export async function POST(req: NextRequest) {
             )
         }
 
-        const supabase = getSupabaseClient()
         const tempPassword = uuidv4()
-
-        const { data: authData, error: authError } = await supabase.auth.signUp({
+        const { data: authData } = await supabase.auth.signUp({
             email: admin_email,
             password: tempPassword,
             options: {
@@ -42,23 +27,15 @@ export async function POST(req: NextRequest) {
             }
         })
 
-        let userId = authData?.user?.id || null
+        let userId = authData.user?.id
 
         if (!userId) {
-            const { data: userList, error: listError } = await supabase.auth.admin.listUsers()
-
-            if (listError) {
-                console.error('List Users Error:', listError.message)
-                return NextResponse.json({ error: 'User lookup failed' }, { status: 500 })
-            }
-
-            const existingUser = userList.users.find(user => user.email?.toLowerCase() === admin_email.toLowerCase())
+            const { data: users } = await supabase.auth.admin.listUsers()
+            const existingUser = users.users.find(user => user.email === admin_email)
 
             if (!existingUser) {
-                console.error('Provisioning: unable to locate admin user after sign-up attempt.')
                 return NextResponse.json({ error: 'User creation failed' }, { status: 500 })
             }
-
             userId = existingUser.id
         }
 
@@ -74,18 +51,19 @@ export async function POST(req: NextRequest) {
             .single()
 
         if (orgError) {
-            console.error('Org Creation Error:', orgError.message)
+            console.error('Org Creation Error:', orgError)
             return NextResponse.json({ error: 'Organization creation failed' }, { status: 500 })
         }
 
-        const newApiKey = `aw_${uuidv4().replace(/-/g, '')}`
+        const newApiKey = 'aw_' + uuidv4().replace(/-/g, '')
+
         const { data: store, error: storeError } = await supabase
             .from('stores')
             .insert({
                 organization_id: org.id,
                 name: store_name || 'WooCommerce Store',
                 url: site_url,
-                currency: currency || 'USD',
+                currency_code: currency || 'USD',
                 api_key: newApiKey,
                 shadow_mode: true,
                 active_modules: ['shadow_mode']
@@ -94,24 +72,15 @@ export async function POST(req: NextRequest) {
             .single()
 
         if (storeError) {
-            console.error('Store Creation Error:', storeError.message)
+            console.error('Store Creation Error:', storeError)
             return NextResponse.json({ error: 'Store creation failed' }, { status: 500 })
         }
 
-        const { error: linkError } = await supabase
-            .from('store_users')
-            .insert({
-                user_id: userId,
-                store_id: store.id,
-                role: 'owner'
-            })
-
-        if (linkError) {
-            console.error('Store User Link Error:', linkError.message)
-            return NextResponse.json({ error: 'Failed to link user to store' }, { status: 500 })
-        }
-
-        const dashboardUrlBase = process.env.NEXT_PUBLIC_APP_URL || 'https://app.alphawoo.com'
+        await supabase.from('store_users').insert({
+            user_id: userId,
+            store_id: store.id,
+            role: 'owner'
+        })
 
         return NextResponse.json(
             {
@@ -119,13 +88,13 @@ export async function POST(req: NextRequest) {
                 store_id: store.id,
                 api_key: newApiKey,
                 shadow_mode: true,
-                dashboard_url: `${dashboardUrlBase}/dashboard/${store.id}`,
+                dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${store.id}`,
                 message: 'AlphaWoo Connected: Shadow Mode Active'
             },
             { status: 201 }
         )
     } catch (error: any) {
-        console.error('Provisioning Exception:', error?.message || error)
+        console.error('Provisioning Exception:', error.message)
         return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
     }
 }
