@@ -1,3 +1,4 @@
+import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
 import ShadowView from '@/components/dashboard/shadow-view'
 import SetPasswordBanner from '@/components/dashboard/set-password-banner'
@@ -9,11 +10,7 @@ type DashboardPageProps = {
 export default async function DashboardPage({ params }: DashboardPageProps) {
     const storeId = params.storeId
     if (!storeId) {
-        return (
-            <div className="p-8 text-red-600">
-                Error: Store ID missing from URL.
-            </div>
-        )
+        redirect('/dashboard')
     }
 
     const supabase = await createClient()

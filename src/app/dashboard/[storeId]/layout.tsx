@@ -15,16 +15,7 @@ export default async function StoreLayout({ children, params }: LayoutProps) {
     const storeId = resolvedParams?.storeId
 
     if (!storeId) {
-        return (
-            <div className="p-10 font-mono text-red-600">
-                <h1 className="text-xl font-bold">Location Error</h1>
-                <p>This file is running, but cannot find the Store ID.</p>
-                <p>
-                    Ensure this file is located at: <code>app/dashboard/[storeId]/layout.tsx</code>
-                </p>
-                <p>Current Params received: {JSON.stringify(resolvedParams)}</p>
-            </div>
-        )
+        return redirect('/dashboard')
     }
 
     const supabase = await createClient()
