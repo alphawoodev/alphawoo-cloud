@@ -1,8 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import ShadowView from '@/components/dashboard/shadow-view'
-import ActiveView from '@/components/dashboard/active-view'
 
 type DashboardPageProps = {
     params: { storeId: string }
@@ -42,27 +40,26 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
 
     if (!store) {
         return (
-            <div className="p-8 text-center text-zinc-600">
-                Store not found
-            </div>
+            <div className="p-8">Store not found</div>
         )
     }
 
-    if (store.shadow_mode) {
-        return (
-            <div className="p-8 max-w-6xl mx-auto">
-                <header className="mb-8">
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
-                        Revenue Leakage Detector
-                    </h1>
-                    <p className="text-zinc-500">
-                        Monitoring store activity in background mode.
-                    </p>
-                </header>
+    return (
+        <div className="p-8 max-w-6xl mx-auto">
+            <header className="mb-8">
+                <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
+                    {store.shadow_mode ? 'Revenue Leakage Detector' : 'AlphaWoo Dashboard'}
+                </h1>
+                <p className="text-zinc-500">
+                    Store ID: <code className="text-xs bg-zinc-100 p-1 rounded">{params.storeId}</code>
+                </p>
+            </header>
+
+            {store.shadow_mode ? (
                 <ShadowView storeId={params.storeId} currencyCode={store.currency_code} />
-            </div>
-        )
-    }
-
-    return <ActiveView storeId={params.storeId} />
+            ) : (
+                <div>Active Mode (Coming Soon)</div>
+            )}
+        </div>
+    )
 }

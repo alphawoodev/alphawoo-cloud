@@ -1,6 +1,6 @@
 type ShadowViewProps = {
     storeId: string
-    currencyCode: string
+    currencyCode?: string | null
 }
 
 export default function ShadowView({ storeId, currencyCode }: ShadowViewProps) {
@@ -10,7 +10,7 @@ export default function ShadowView({ storeId, currencyCode }: ShadowViewProps) {
                 Shadow Mode · Store {storeId}
             </p>
             <div className="mt-4 text-5xl font-semibold text-rose-700">
-                {currencyCode} 0.00
+                {currencyCode || 'USD'} 0.00
             </div>
             <p className="mt-2 text-zinc-600">
                 Revenue Leakage Detector is running. Shadow totals will appear as traffic arrives.
