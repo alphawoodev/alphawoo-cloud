@@ -32,18 +32,25 @@ function MagicLoginForm() {
         const origin = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
         const redirectUrl = `${origin}/auth/callback?next=${encodeURIComponent(nextUrl)}`
 
-        const { error: otpError } = await supabase.auth.signInWithOtp({
-            email,
-            options: {
-                emailRedirectTo: redirectUrl,
-            },
-        })
+        try {
+            const res = await fetch('/api/auth/send-magic-link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email,
+                    nextUrl: redirectUrl
+                })
+            })
 
-        if (otpError) {
-            setError(otpError.message)
-            setIsLoading(false)
-        } else {
+            if (!res.ok) {
+                const data = await res.json()
+                throw new Error(data.error || 'Failed to send link')
+            }
+
             setIsSent(true)
+            setIsLoading(false)
+        } catch (err: any) {
+            setError(err.message)
             setIsLoading(false)
         }
     }
