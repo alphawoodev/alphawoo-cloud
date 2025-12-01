@@ -15,6 +15,59 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
         }
 
+        const cleanUrl = site_url.replace(/\/$/, '')
+
+        const { data: existingStore } = await supabase
+            .from('stores')
+            .select('id, organization_id')
+            .eq('url', cleanUrl)
+            .single()
+
+        if (existingStore) {
+            const { data: users } = await supabase.auth.admin.listUsers()
+            const existingUser = users.users.find(
+                (user) => user.email?.toLowerCase() === admin_email.toLowerCase()
+            )
+
+            if (existingUser) {
+                const { data: link } = await supabase
+                    .from('store_users')
+                    .select('role')
+                    .eq('user_id', existingUser.id)
+                    .eq('store_id', existingStore.id)
+                    .single()
+
+                if (link) {
+                    const { data: fullStore } = await supabase
+                        .from('stores')
+                        .select('id, api_key, shadow_mode')
+                        .eq('id', existingStore.id)
+                        .single()
+
+                    if (fullStore) {
+                        return NextResponse.json(
+                            {
+                                success: true,
+                                store_id: fullStore.id,
+                                api_key: fullStore.api_key,
+                                shadow_mode: fullStore.shadow_mode,
+                                dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${fullStore.id}`,
+                                message: 'AlphaWoo Re-Connected'
+                            },
+                            { status: 200 }
+                        )
+                    }
+                }
+            }
+
+            return NextResponse.json(
+                {
+                    error: 'This store URL is already registered to another organization. Please contact support to transfer ownership.'
+                },
+                { status: 409 }
+            )
+        }
+
         const tempPassword = uuidv4()
         const { data: userData, error: createError } = await supabase.auth.admin.createUser({
             email: admin_email,
@@ -31,7 +84,7 @@ export async function POST(req: NextRequest) {
             if (createError.message.includes('already been registered') || createError.status === 422) {
                 const { data: users } = await supabase.auth.admin.listUsers()
                 const existingUser = users.users.find(
-                    user => user.email?.toLowerCase() === admin_email.toLowerCase()
+                    (user) => user.email?.toLowerCase() === admin_email.toLowerCase()
                 )
 
                 if (!existingUser) {
@@ -79,7 +132,7 @@ export async function POST(req: NextRequest) {
             .insert({
                 organization_id: org.id,
                 name: store_name || 'WooCommerce Store',
-                url: site_url,
+                url: cleanUrl,
                 currency_code: currency || 'USD',
                 api_key: newApiKey,
                 shadow_mode: true,
@@ -102,14 +155,17 @@ export async function POST(req: NextRequest) {
             role: 'owner'
         })
 
-        return NextResponse.json({
-            success: true,
-            store_id: store.id,
-            api_key: newApiKey,
-            shadow_mode: true,
-            dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${store.id}`,
-            message: 'AlphaWoo Connected: Shadow Mode Active'
-        }, { status: 201 })
+        return NextResponse.json(
+            {
+                success: true,
+                store_id: store.id,
+                api_key: newApiKey,
+                shadow_mode: true,
+                dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${store.id}`,
+                message: 'AlphaWoo Connected: Shadow Mode Active'
+            },
+            { status: 201 }
+        )
     } catch (error: any) {
         console.error('Provisioning Exception:', error)
         return NextResponse.json(
