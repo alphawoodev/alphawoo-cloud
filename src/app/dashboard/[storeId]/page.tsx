@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ShadowView from '@/components/dashboard/shadow-view'
+import SetPasswordBanner from '@/components/dashboard/set-password-banner'
 
 type DashboardPageProps = {
     params: { storeId: string }
@@ -46,6 +47,7 @@ export default async function DashboardPage({ params }: DashboardPageProps) {
 
     return (
         <div className="p-8 max-w-6xl mx-auto">
+            <SetPasswordBanner />
             <header className="mb-8">
                 <h1 className="text-2xl font-bold tracking-tight text-zinc-900 dark:text-white">
                     {store.shadow_mode ? 'Revenue Leakage Detector' : 'AlphaWoo Dashboard'}
