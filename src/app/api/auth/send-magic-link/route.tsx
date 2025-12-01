@@ -16,30 +16,38 @@ export async function POST(req: NextRequest) {
     try {
         const { email, nextUrl } = await req.json()
 
-        if (!email || !nextUrl) {
-            return NextResponse.json({ error: 'Missing email or nextUrl' }, { status: 400 })
+        if (!email) {
+            return NextResponse.json({ error: 'Email is required' }, { status: 400 })
         }
 
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+
+        // 1. Generate OTP Token via Admin API
         const { data, error } = await supabase.auth.admin.generateLink({
             type: 'magiclink',
-            email,
-            options: {
-                redirectTo: nextUrl,
-            },
+            email: email,
         })
 
         if (error) {
             throw error
         }
 
-        const action_link = data?.properties?.action_link
+        // 2. Extract the OTP Token
+        const token = data.properties?.email_otp
+        const type = 'magiclink'
 
-        if (!action_link) {
-            return NextResponse.json({ error: 'Failed to generate magic link' }, { status: 500 })
+        if (!token) {
+            return NextResponse.json({ error: 'Failed to generate OTP token' }, { status: 500 })
         }
 
+        // 3. Construct FIRST-PARTY Link (Direct to our domain)
+        const magicLinkUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}&type=${type}&email=${encodeURIComponent(email)}&next=${encodeURIComponent(nextUrl || '/dashboard')}`
+
+        console.log(`[Auth] Generated OTP Link for ${email}`)
+
+        // 4. Render Email
         const emailHtml = await render(
-            <AlphaWooMagicLink loginUrl={action_link} userEmail={email} />
+            <AlphaWooMagicLink loginUrl={magicLinkUrl} userEmail={email} />
         )
 
         if (!postmark) {
