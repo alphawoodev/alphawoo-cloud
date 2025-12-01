@@ -31,7 +31,7 @@ export default async function DashboardRootPage() {
     // 3. Fetch Stores for this Org
     const { data: stores } = await supabase
         .from("stores")
-        .select("id, name, url, currency_code") //
+        .select("id, woocommerce_domain, currency_code") //
         .eq("organization_id", org.id);
 
     const storeList = stores || [];
@@ -82,14 +82,14 @@ export default async function DashboardRootPage() {
                                         <div className="flex-1 truncate">
                                             <div className="flex items-center space-x-3">
                                                 <h3 className="truncate text-sm font-medium text-zinc-900">
-                                                    {store.name}
+                                                    {store.woocommerce_domain}
                                                 </h3>
                                                 <span className="inline-block flex-shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
                                                     Active
                                                 </span>
                                             </div>
                                             <p className="mt-1 truncate text-sm text-zinc-500">
-                                                {store.url}
+                                                {store.woocommerce_domain}
                                             </p>
                                         </div>
                                     </div>
