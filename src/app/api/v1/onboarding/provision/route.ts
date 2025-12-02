@@ -121,12 +121,26 @@ export async function POST(req: NextRequest) {
                 .from('store_users')
                 .upsert({ user_id: userId, store_id: existingStore.id, role: 'owner' }, { onConflict: 'user_id,store_id' })
 
+            // Auto-send magic link to the owner for immediate access.
+            const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
+                email: adminEmail,
+                options: {
+                    // Send to password creation flow, then onwards.
+                    emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/auth/update-password`,
+                    shouldCreateUser: true,
+                },
+            })
+            if (otpError) {
+                console.error('Auto-Magic Link Failed:', otpError)
+            }
+
             return NextResponse.json(
                 {
                     success: true,
                     store_id: existingStore.id,
                     api_key: existingStore.api_key,
                     message: 'Connection Successful (Ownership Transferred)',
+                    magic_link_sent: !otpError,
                 },
                 { status: 200, headers: corsHeaders }
             )
@@ -159,12 +173,26 @@ export async function POST(req: NextRequest) {
             .from('store_users')
             .upsert({ user_id: userId, store_id: newStore.id, role: 'owner' }, { onConflict: 'user_id,store_id' })
 
+        // Auto-send magic link to the owner for immediate access.
+        const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
+            email: adminEmail,
+            options: {
+                // Send to password creation flow, then onwards.
+                emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/auth/update-password`,
+                shouldCreateUser: true,
+            },
+        })
+        if (otpError) {
+            console.error('Auto-Magic Link Failed:', otpError)
+        }
+
         return NextResponse.json(
             {
                 success: true,
                 store_id: newStore.id,
                 api_key: newStore.api_key,
                 message: 'Connection Successful',
+                magic_link_sent: !otpError,
             },
             { status: 201, headers: corsHeaders }
         )
