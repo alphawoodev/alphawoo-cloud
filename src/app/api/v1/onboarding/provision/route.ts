@@ -1,17 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    {
-        auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-        },
-    }
-)
-
 const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -21,8 +10,9 @@ const corsHeaders = {
 export async function POST(req: NextRequest) {
     try {
         const body = await req.json()
-        const adminEmail = (body.admin_email || body.email || '').trim()
-        const siteUrl = body.site_url || body.url
+        const adminEmailRaw = (body.admin_email || body.email || '').trim()
+        const adminEmail = adminEmailRaw.toLowerCase()
+        const siteUrl = (body.site_url || body.url || '').trim()
         const storeName = body.store_name || body.name || 'WooCommerce Store'
         const currency = body.currency || 'USD'
 
@@ -32,54 +22,73 @@ export async function POST(req: NextRequest) {
 
         const cleanUrl = siteUrl.replace(/\/$/, '')
 
-        // Resolve/create user
-        const { data: createdUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
-            email: adminEmail,
-            email_confirm: true,
+        const supabaseAdmin = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            { auth: { autoRefreshToken: false, persistSession: false } }
+        )
+
+        // 1) Resolve user via RPC (exact match, lowercased)
+        const { data: existingUserId, error: rpcError } = await supabaseAdmin.rpc('get_user_id_by_email', {
+            email_input: adminEmail,
         })
+        if (rpcError) {
+            return NextResponse.json({ error: `RPC failed: ${rpcError.message}` }, { status: 500, headers: corsHeaders })
+        }
 
-        let userId = createdUser.user?.id
+        let userId = existingUserId as string | null
+        let isNewUser = false
 
-        if (createUserError) {
-            if (createUserError.message?.includes('already been registered') || createUserError.status === 422) {
-                const { data: usersList } = await supabaseAdmin.auth.admin.listUsers()
-                const found = usersList.users.find((u) => u.email?.toLowerCase() === adminEmail.toLowerCase())
-                if (!found) {
-                    return NextResponse.json(
-                        { error: 'User exists but ID not found.' },
-                        { status: 500, headers: corsHeaders }
-                    )
-                }
-                userId = found.id
-            } else {
+        if (!userId) {
+            const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+                email: adminEmail,
+                email_confirm: true,
+                user_metadata: { source: 'plugin_provision' },
+            })
+            if (createError) {
                 return NextResponse.json(
-                    { error: `User creation failed: ${createUserError.message}` },
-                    { status: 400, headers: corsHeaders }
+                    { error: `User creation failed: ${createError.message}` },
+                    { status: 500, headers: corsHeaders }
                 )
             }
+            userId = newUser.user.id
+            isNewUser = true
         }
 
         if (!userId) {
             return NextResponse.json({ error: 'User resolution failed.' }, { status: 500, headers: corsHeaders })
         }
 
-        // Resolve/create organization for this user
+        // 2) Resolve/create organization by URL
         const { data: existingOrg } = await supabaseAdmin
             .from('organizations')
-            .select('id')
-            .eq('owner_user_id', userId)
+            .select('id, owner_user_id')
+            .eq('url', cleanUrl)
             .single()
 
-        let targetOrgId = existingOrg?.id
-
-        if (!targetOrgId) {
+        let orgId: string
+        if (existingOrg) {
+            orgId = existingOrg.id
+            if (existingOrg.owner_user_id !== userId) {
+                const { error: transferError } = await supabaseAdmin
+                    .from('organizations')
+                    .update({ owner_user_id: userId })
+                    .eq('id', orgId)
+                if (transferError) {
+                    return NextResponse.json(
+                        { error: `Transfer failed: ${transferError.message}` },
+                        { status: 500, headers: corsHeaders }
+                    )
+                }
+            }
+        } else {
             const { data: newOrg, error: orgError } = await supabaseAdmin
                 .from('organizations')
                 .insert({
-                    name: `${storeName} Org`,
                     owner_user_id: userId,
-                    plan_id: 'FREE',
-                    stripe_customer_id: null,
+                    name: storeName || 'New Store',
+                    url: cleanUrl,
+                    subscription_status: 'inactive',
                 })
                 .select('id')
                 .single()
@@ -90,111 +99,89 @@ export async function POST(req: NextRequest) {
                     { status: 500, headers: corsHeaders }
                 )
             }
-
-            targetOrgId = newOrg.id
+            orgId = newOrg.id
         }
 
-        // Check for existing store by URL
+        // 3) Resolve/create store by URL
         const { data: existingStore } = await supabaseAdmin
             .from('stores')
             .select('id, api_key, organization_id')
             .eq('url', cleanUrl)
             .single()
 
+        let storeId: string
+        let apiKey: string
+
         if (existingStore) {
-            if (existingStore.organization_id !== targetOrgId) {
+            storeId = existingStore.id
+            apiKey = existingStore.api_key
+
+            if (existingStore.organization_id !== orgId) {
                 const { error: transferError } = await supabaseAdmin
                     .from('stores')
-                    .update({ organization_id: targetOrgId })
-                    .eq('id', existingStore.id)
-
+                    .update({ organization_id: orgId })
+                    .eq('id', storeId)
                 if (transferError) {
                     return NextResponse.json(
-                        { error: `Transfer failed: ${transferError.message}` },
+                        { error: `Store transfer failed: ${transferError.message}` },
                         { status: 500, headers: corsHeaders }
                     )
                 }
             }
+        } else {
+            const newApiKey = 'aw_' + crypto.randomUUID().replace(/-/g, '')
+            const { data: newStore, error: createStoreError } = await supabaseAdmin
+                .from('stores')
+                .insert({
+                    organization_id: orgId,
+                    name: storeName,
+                    url: cleanUrl,
+                    currency_code: currency,
+                    api_key: newApiKey,
+                    shadow_mode: true,
+                    active_modules: ['shadow_mode'],
+                })
+                .select('id, api_key')
+                .single()
 
-            // Ensure store_users entry for new owner
-            await supabaseAdmin
-                .from('store_users')
-                .upsert({ user_id: userId, store_id: existingStore.id, role: 'owner' }, { onConflict: 'user_id,store_id' })
+            if (createStoreError || !newStore) {
+                return NextResponse.json(
+                    { error: `Store creation failed: ${createStoreError?.message || 'unknown error'}` },
+                    { status: 500, headers: corsHeaders }
+                )
+            }
 
-            // Auto-send magic link to the owner for immediate access.
+            storeId = newStore.id
+            apiKey = newStore.api_key
+        }
+
+        // Ensure store_users entry for owner
+        await supabaseAdmin
+            .from('store_users')
+            .upsert({ user_id: userId, store_id: storeId, role: 'owner' }, { onConflict: 'user_id,store_id' })
+
+        // 4) Only send magic link if we actually created the user
+        if (isNewUser) {
             const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
                 email: adminEmail,
                 options: {
-                    // Send to password creation flow, then onwards.
-                    emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/auth/update-password`,
-                    shouldCreateUser: true,
+                    emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/dashboard`,
                 },
             })
             if (otpError) {
                 console.error('Auto-Magic Link Failed:', otpError)
             }
-
-            return NextResponse.json(
-                {
-                    success: true,
-                    store_id: existingStore.id,
-                    api_key: existingStore.api_key,
-                    message: 'Connection Successful (Ownership Transferred)',
-                    magic_link_sent: !otpError,
-                },
-                { status: 200, headers: corsHeaders }
-            )
-        }
-
-        // Create new store
-        const newApiKey = 'aw_' + crypto.randomUUID().replace(/-/g, '')
-        const { data: newStore, error: createStoreError } = await supabaseAdmin
-            .from('stores')
-            .insert({
-                organization_id: targetOrgId,
-                name: storeName,
-                url: cleanUrl,
-                currency_code: currency,
-                api_key: newApiKey,
-                shadow_mode: true,
-                active_modules: ['shadow_mode'],
-            })
-            .select('id, api_key')
-            .single()
-
-        if (createStoreError || !newStore) {
-            return NextResponse.json(
-                { error: `Store creation failed: ${createStoreError?.message || 'unknown error'}` },
-                { status: 500, headers: corsHeaders }
-            )
-        }
-
-        await supabaseAdmin
-            .from('store_users')
-            .upsert({ user_id: userId, store_id: newStore.id, role: 'owner' }, { onConflict: 'user_id,store_id' })
-
-        // Auto-send magic link to the owner for immediate access.
-        const { error: otpError } = await supabaseAdmin.auth.signInWithOtp({
-            email: adminEmail,
-            options: {
-                // Send to password creation flow, then onwards.
-                emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback?next=/auth/update-password`,
-                shouldCreateUser: true,
-            },
-        })
-        if (otpError) {
-            console.error('Auto-Magic Link Failed:', otpError)
         }
 
         return NextResponse.json(
             {
                 success: true,
-                store_id: newStore.id,
-                api_key: newStore.api_key,
+                store_id: storeId,
+                api_key: apiKey,
                 message: 'Connection Successful',
-                magic_link_sent: !otpError,
+                magic_link_sent: isNewUser,
             },
-            { status: 201, headers: corsHeaders }
+            { status: existingStore ? 200 : 201, headers: corsHeaders }
         )
     } catch (error: any) {
         console.error('Provision Error:', error)
@@ -202,7 +189,7 @@ export async function POST(req: NextRequest) {
     }
 }
 
-export async function OPTIONS(req: NextRequest) {
+export async function OPTIONS() {
     return new NextResponse(null, {
         status: 200,
         headers: corsHeaders,
