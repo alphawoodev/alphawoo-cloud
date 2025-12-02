@@ -59,35 +59,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'User resolution failed.' }, { status: 500, headers: corsHeaders })
         }
 
-        // 2) Resolve/create organization by URL
-        const { data: existingOrg } = await supabaseAdmin
-            .from('organizations')
-            .select('id, owner_user_id')
+        // 2) Resolve store first by URL to reuse its organization if it exists
+        const { data: existingStore } = await supabaseAdmin
+            .from('stores')
+            .select('id, api_key, organization_id, url')
             .eq('url', cleanUrl)
             .single()
 
+        // 3) Resolve/create organization (reusing store's org when present)
         let orgId: string
-        if (existingOrg) {
-            orgId = existingOrg.id
-            if (existingOrg.owner_user_id !== userId) {
-                const { error: transferError } = await supabaseAdmin
-                    .from('organizations')
-                    .update({ owner_user_id: userId })
-                    .eq('id', orgId)
-                if (transferError) {
-                    return NextResponse.json(
-                        { error: `Transfer failed: ${transferError.message}` },
-                        { status: 500, headers: corsHeaders }
-                    )
-                }
-            }
+        if (existingStore?.organization_id) {
+            orgId = existingStore.organization_id
         } else {
             const { data: newOrg, error: orgError } = await supabaseAdmin
                 .from('organizations')
                 .insert({
                     owner_user_id: userId,
                     name: storeName || 'New Store',
-                    url: cleanUrl,
                     subscription_status: 'inactive',
                 })
                 .select('id')
@@ -101,13 +89,6 @@ export async function POST(req: NextRequest) {
             }
             orgId = newOrg.id
         }
-
-        // 3) Resolve/create store by URL
-        const { data: existingStore } = await supabaseAdmin
-            .from('stores')
-            .select('id, api_key, organization_id')
-            .eq('url', cleanUrl)
-            .single()
 
         let storeId: string
         let apiKey: string
@@ -178,6 +159,7 @@ export async function POST(req: NextRequest) {
                 success: true,
                 store_id: storeId,
                 api_key: apiKey,
+                organization_id: orgId,
                 message: 'Connection Successful',
                 magic_link_sent: isNewUser,
             },
