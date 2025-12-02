@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { v4 as uuidv4 } from 'uuid'
 
-const supabase = createClient(
+const supabaseAdmin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    {
+        auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+        },
+    }
 )
 
 const corsHeaders = {
@@ -15,159 +20,157 @@ const corsHeaders = {
 
 export async function POST(req: NextRequest) {
     try {
-        // Phase 0 payload alignment
         const body = await req.json()
-        const email = (body.email || body.admin_email || '').trim()
-        const siteUrl = body.url || body.site_url
-        const currency = body.currency
-        const storeName = body.name || body.store_name
+        const adminEmail = (body.admin_email || body.email || '').trim()
+        const siteUrl = body.site_url || body.url
+        const storeName = body.store_name || body.name || 'WooCommerce Store'
+        const currency = body.currency || 'USD'
 
-        if (!email || !siteUrl) {
+        if (!adminEmail || !siteUrl) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers: corsHeaders })
         }
 
         const cleanUrl = siteUrl.replace(/\/$/, '')
 
-        const { data: existingStore } = await supabase
-            .from('stores')
-            .select(
-                `id, api_key, organization_id, shadow_mode,
-                 organizations (
-                    owner_user_id,
-                    users:owner_user_id ( email )
-                 )`
-            )
-            .eq('url', cleanUrl)
-            .single()
-
-        // Auto-recovery: same owner gets keys back; otherwise block.
-        if (existingStore) {
-            // @ts-ignore nested select alias
-            const ownerEmail = existingStore.organizations?.users?.email
-
-            if (ownerEmail && ownerEmail.toLowerCase() === email.toLowerCase()) {
-                return NextResponse.json(
-                    {
-                        success: true,
-                        store_id: existingStore.id,
-                        api_key: existingStore.api_key,
-                        shadow_mode: existingStore.shadow_mode,
-                        dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${existingStore.id}`,
-                        message: 'Recovered existing connection',
-                    },
-                    { status: 200, headers: corsHeaders }
-                )
-            }
-
-            return NextResponse.json(
-                { error: 'This store URL is already registered to another organization.' },
-                { status: 409, headers: corsHeaders }
-            )
-        }
-
-        // CREATE NEW FLOW (unchanged from earlier with normalized inputs)
-        const tempPassword = uuidv4()
-        const { data: userData, error: createError } = await supabase.auth.admin.createUser({
-            email,
-            password: tempPassword,
+        // Resolve/create user
+        const { data: createdUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
+            email: adminEmail,
             email_confirm: true,
-            user_metadata: { full_name: 'Store Admin' },
         })
 
-        let userId = userData.user?.id
+        let userId = createdUser.user?.id
 
-        if (createError) {
-            console.error('Supabase Admin Create Error:', createError.message)
-
-            if (createError.message.includes('already been registered') || createError.status === 422) {
-                const { data: users } = await supabase.auth.admin.listUsers()
-                const existingUser = users.users.find((user) => user.email?.toLowerCase() === email.toLowerCase())
-
-                if (!existingUser) {
+        if (createUserError) {
+            if (createUserError.message?.includes('already been registered') || createUserError.status === 422) {
+                const { data: usersList } = await supabaseAdmin.auth.admin.listUsers()
+                const found = usersList.users.find((u) => u.email?.toLowerCase() === adminEmail.toLowerCase())
+                if (!found) {
                     return NextResponse.json(
                         { error: 'User exists but ID not found.' },
                         { status: 500, headers: corsHeaders }
                     )
                 }
-
-                userId = existingUser.id
+                userId = found.id
             } else {
                 return NextResponse.json(
-                    { error: `User creation failed: ${createError.message}` },
+                    { error: `User creation failed: ${createUserError.message}` },
                     { status: 400, headers: corsHeaders }
                 )
             }
         }
 
         if (!userId) {
-            return NextResponse.json({ error: 'User creation returned no ID.' }, { status: 500, headers: corsHeaders })
+            return NextResponse.json({ error: 'User resolution failed.' }, { status: 500, headers: corsHeaders })
         }
 
-        const { data: org, error: orgError } = await supabase
+        // Resolve/create organization for this user
+        const { data: existingOrg } = await supabaseAdmin
             .from('organizations')
-            .insert({
-                name: storeName || 'My Organization',
-                owner_user_id: userId,
-                plan_id: 'FREE',
-                stripe_customer_id: null,
-            })
             .select('id')
+            .eq('owner_user_id', userId)
             .single()
 
-        if (orgError) {
-            console.error('Org Creation Error:', orgError)
+        let targetOrgId = existingOrg?.id
+
+        if (!targetOrgId) {
+            const { data: newOrg, error: orgError } = await supabaseAdmin
+                .from('organizations')
+                .insert({
+                    name: `${storeName} Org`,
+                    owner_user_id: userId,
+                    plan_id: 'FREE',
+                    stripe_customer_id: null,
+                })
+                .select('id')
+                .single()
+
+            if (orgError || !newOrg) {
+                return NextResponse.json(
+                    { error: `Org creation failed: ${orgError?.message || 'unknown error'}` },
+                    { status: 500, headers: corsHeaders }
+                )
+            }
+
+            targetOrgId = newOrg.id
+        }
+
+        // Check for existing store by URL
+        const { data: existingStore } = await supabaseAdmin
+            .from('stores')
+            .select('id, api_key, organization_id')
+            .eq('url', cleanUrl)
+            .single()
+
+        if (existingStore) {
+            if (existingStore.organization_id !== targetOrgId) {
+                const { error: transferError } = await supabaseAdmin
+                    .from('stores')
+                    .update({ organization_id: targetOrgId })
+                    .eq('id', existingStore.id)
+
+                if (transferError) {
+                    return NextResponse.json(
+                        { error: `Transfer failed: ${transferError.message}` },
+                        { status: 500, headers: corsHeaders }
+                    )
+                }
+            }
+
+            // Ensure store_users entry for new owner
+            await supabaseAdmin
+                .from('store_users')
+                .upsert({ user_id: userId, store_id: existingStore.id, role: 'owner' }, { onConflict: 'user_id,store_id' })
+
             return NextResponse.json(
-                { error: `Org creation failed: ${orgError.message}` },
-                { status: 500, headers: corsHeaders }
+                {
+                    success: true,
+                    store_id: existingStore.id,
+                    api_key: existingStore.api_key,
+                    message: 'Connection Successful (Ownership Transferred)',
+                },
+                { status: 200, headers: corsHeaders }
             )
         }
 
-        const newApiKey = 'aw_' + uuidv4().replace(/-/g, '')
-        const { data: store, error: storeError } = await supabase
+        // Create new store
+        const newApiKey = 'aw_' + crypto.randomUUID().replace(/-/g, '')
+        const { data: newStore, error: createStoreError } = await supabaseAdmin
             .from('stores')
             .insert({
-                organization_id: org.id,
-                name: storeName || 'WooCommerce Store',
+                organization_id: targetOrgId,
+                name: storeName,
                 url: cleanUrl,
-                currency_code: currency || 'USD',
+                currency_code: currency,
                 api_key: newApiKey,
                 shadow_mode: true,
                 active_modules: ['shadow_mode'],
             })
-            .select('id')
+            .select('id, api_key')
             .single()
 
-        if (storeError) {
-            console.error('Store Creation Error:', storeError)
+        if (createStoreError || !newStore) {
             return NextResponse.json(
-                { error: `Store creation failed: ${storeError.message}` },
+                { error: `Store creation failed: ${createStoreError?.message || 'unknown error'}` },
                 { status: 500, headers: corsHeaders }
             )
         }
 
-        await supabase.from('store_users').insert({
-            user_id: userId,
-            store_id: store.id,
-            role: 'owner',
-        })
+        await supabaseAdmin
+            .from('store_users')
+            .upsert({ user_id: userId, store_id: newStore.id, role: 'owner' }, { onConflict: 'user_id,store_id' })
 
         return NextResponse.json(
             {
                 success: true,
-                store_id: store.id,
-                api_key: newApiKey,
-                shadow_mode: true,
-                dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${store.id}`,
-                message: 'AlphaWoo Connected: Shadow Mode Active',
+                store_id: newStore.id,
+                api_key: newStore.api_key,
+                message: 'Connection Successful',
             },
             { status: 201, headers: corsHeaders }
         )
     } catch (error: any) {
-        console.error('Provisioning Exception:', error)
-        return NextResponse.json(
-            { error: `Internal Server Error: ${error.message}` },
-            { status: 500, headers: corsHeaders }
-        )
+        console.error('Provision Error:', error)
+        return NextResponse.json({ error: 'Provisioning Failed: ' + error.message }, { status: 500, headers: corsHeaders })
     }
 }
 
