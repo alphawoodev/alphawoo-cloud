@@ -28,7 +28,8 @@ function MagicLoginForm() {
         setIsLoading(true)
         setError(null)
 
-        const nextUrl = searchParams.get('next') || '/dashboard'
+        // Default to password setup flow unless an explicit next is provided.
+        const nextUrl = searchParams.get('next') || '/auth/update-password'
         const origin = process.env.NEXT_PUBLIC_APP_URL || window.location.origin
         const redirectUrl = `${origin}/auth/callback?next=${encodeURIComponent(nextUrl)}`
 
