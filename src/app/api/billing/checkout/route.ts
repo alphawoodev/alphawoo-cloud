@@ -26,34 +26,30 @@ export async function POST(request: Request) {
         const body = await request.json()
         const { priceId, organizationId } = body
 
-        // --- DEBUG LOGS (Check Vercel Logs for this) ---
-        console.log(`🔍 [Checkout Debug] User ID: ${user.id}`)
-        console.log(`🔍 [Checkout Debug] Request Org ID: ${organizationId}`)
-        // ------------------------------------------------
-
         if (!priceId || !organizationId) {
-            console.error('❌ Checkout Failed: Missing Parameters', body)
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
         }
 
         // 3. Verify Ownership & Get Current ID
+        // FIXED: Removed 'email' from the select string
         const { data: org, error: dbError } = (await supabase
             .from('organizations')
-            .select('stripe_customer_id, owner_user_id, name, email')
+            .select('stripe_customer_id, owner_user_id, name')
             .eq('id', organizationId)
             .single()) as unknown as { data: any; error: any }
 
-        // --- DEBUG LOGS ---
-        if (dbError) console.error(`❌ [Checkout Debug] DB Error: ${dbError.message}`)
-        if (org) console.log(`🔍 [Checkout Debug] Found Org Owner: ${org.owner_user_id}`)
-        // ------------------
+        if (dbError) {
+            console.error(`❌ DB Error: ${dbError.message}`)
+            // If the org doesn't exist or query fails, we must stop
+            return NextResponse.json({ error: 'Database Query Failed' }, { status: 500 })
+        }
 
         if (!org || org.owner_user_id !== user.id) {
-            console.error('❌ Checkout Failed: Ownership Mismatch or Org Not Found')
+            console.error(`❌ Ownership Mismatch. User: ${user.id}, Owner: ${org?.owner_user_id}`)
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
         }
 
-        let customerId = org.stripe_customer_id
+        let customerId = org.stripe_customer_id as string | null
         let shouldCreateNewCustomer = !customerId
 
         // SELF-HEALING LOGIC
@@ -74,7 +70,7 @@ export async function POST(request: Request) {
         if (shouldCreateNewCustomer) {
             console.log(`⚙️ Creating new Stripe Customer for Org: ${organizationId}`)
             const customer = await stripe.customers.create({
-                email: user.email,
+                email: user.email, // We use the SESSION email, so we are safe
                 name: org.name || 'AlphaWoo Agency',
                 metadata: {
                     supabaseOrgId: organizationId,
@@ -92,8 +88,9 @@ export async function POST(request: Request) {
         }
 
         // 5. Generate Session
+        const resolvedCustomerId = customerId as string
         const session = await stripe.checkout.sessions.create({
-            customer: customerId,
+            customer: resolvedCustomerId,
             line_items: [{ price: priceId, quantity: 1 }],
             mode: 'subscription',
             success_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?payment=success`,
