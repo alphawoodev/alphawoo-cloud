@@ -3,83 +3,72 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    // 1. Setup Admin Client
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // 2. Get Input
     const body = await req.json();
     const email = (body.email || "").trim().toLowerCase();
     const site_url = (body.site_url || "").trim();
 
-    if (!email || !site_url) {
-      return NextResponse.json({ error: "Missing Email or URL" }, { status: 400 });
-    }
+    if (!email || !site_url) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-    console.log(`🔌 BASIC PROVISION: ${email} @ ${site_url}`);
+    // 1. IDENTITY CHECK (RPC)
+    // "Does this user exist?"
+    const { data: existingUserId, error: rpcError } = await supabaseAdmin
+      .rpc('get_user_id_by_email', { email_input: email });
 
-    // 3. Resolve User (The Boring Way)
-    let userId;
-    
-    // Try to get user by email using the Admin API
-    // (We use listUsers with a filter because it's the standard API method)
-    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    
-    // Manual find because listUsers filtering is notoriously weird
-    const existingUser = users?.find(u => u.email?.toLowerCase() === email);
+    if (rpcError) throw rpcError;
 
-    if (existingUser) {
-      console.log(`✅ User Found: ${existingUser.id}`);
-      userId = existingUser.id;
+    let targetUserId = existingUserId;
+    let isNewUser = false;
+
+    if (targetUserId) {
+      console.log(`✅ User Recognized: ${targetUserId}`);
+      isNewUser = false; // <--- THIS PREVENTS THE EMAIL
     } else {
-      console.log(`👤 Creating New User...`);
+      console.log(`👤 User New. Creating account...`);
+      isNewUser = true;
+      
       const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: email,
         email_confirm: true,
-        user_metadata: { source: "plugin" }
+        user_metadata: { source: "plugin_provision" }
       });
-      
+
       if (createError) throw createError;
-      userId = newUser.user.id;
-      
-      // Only send magic link if we actually created a new user
-      await supabaseAdmin.auth.signInWithOtp({
-        email: email,
-        options: { emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard` }
-      });
+      targetUserId = newUser.user.id;
     }
 
-    // 4. Resolve Store (The Boring Way)
-    // Check if store exists by URL
+    // 2. STORE CHECK
     const { data: existingOrg } = await supabaseAdmin
       .from("organizations")
-      .select("id")
+      .select("id, owner_user_id")
       .eq("url", site_url)
       .single();
 
     let orgId;
 
     if (existingOrg) {
-      console.log(`✅ Store Found: ${existingOrg.id}`);
       orgId = existingOrg.id;
-      
-      // Force update owner to current user (Basic "Takeover" logic)
-      await supabaseAdmin
-        .from("organizations")
-        .update({ owner_user_id: userId })
-        .eq("id", orgId);
-        
+      // Transfer logic (if connecting with different email)
+      if (existingOrg.owner_user_id !== targetUserId) {
+          console.log("🔄 Transferring Ownership...");
+          await supabaseAdmin
+            .from("organizations")
+            .update({ owner_user_id: targetUserId })
+            .eq("id", orgId);
+      }
     } else {
-      console.log(`🏪 Creating New Store...`);
+      // Create New Store
       const { data: newOrg, error: orgError } = await supabaseAdmin
         .from("organizations")
         .insert({
-          owner_user_id: userId,
-          name: body.site_name || "My Store",
-          url: site_url,
+          owner_user_id: targetUserId,
+          name: body.site_name || "New Store",
+          url: site_url, 
           subscription_status: 'inactive'
         })
         .select()
@@ -89,16 +78,23 @@ export async function POST(req: Request) {
       orgId = newOrg.id;
     }
 
-    // 5. Return Keys
+    // 3. EMAIL LOGIC (The Guard Rail)
+    if (isNewUser) {
+        // Only sends if we actually created the user in Step 1
+        await supabaseAdmin.auth.signInWithOtp({
+            email: email,
+            options: { emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard` }
+        });
+    }
+
     return NextResponse.json({
       success: true,
       org_id: orgId,
-      user_id: userId,
       message: "Connected."
     });
 
   } catch (err: any) {
-    console.error("PROVISION ERROR:", err);
+    console.error("Provisioning Error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
