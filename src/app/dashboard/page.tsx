@@ -1,112 +1,111 @@
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import { SubscribeButton } from "@/components/billing/subscribe-button";
+import { Card, CardContent } from "@/components/ui/card";
+import { ShieldCheck, AlertTriangle } from "lucide-react";
 
-export default async function DashboardRootPage() {
-    const supabase = await createClient();
+export default async function DashboardPage() {
+  const supabase = await createClient();
 
-    // 1. Auth Check
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return redirect("/login");
+  // 1. Get User
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return redirect("/auth/login");
 
-    // 2. Get the User's Organization
-    // (Agency First: We assume one org per user for now, or fetch the primary)
-    const { data: org } = await supabase
-        .from("organizations")
-        .select("id")
-        .eq("owner_user_id", user.id) //
-        .single();
+  // 2. Get Organization & Subscription Status
+  const { data: org } = (await supabase
+    .from("organizations")
+    // @ts-ignore: columns exist in runtime schema; local types are stale
+    .select("id, name, subscription_status, stripe_customer_id, owner_user_id")
+    .eq("owner_user_id", user.id)
+    .single()) as { data: any };
 
-    if (!org) {
-        // Edge Case: User logged in but has no Organization. 
-        // Redirect to provisioning or show error.
-        return (
-            <div className="p-8 font-sans">
-                <h1 className="text-xl font-bold text-red-600">Account Configuration Error</h1>
-                <p className="text-zinc-600">No Organization found for this user.</p>
-            </div>
-        );
-    }
+  // Safety fallback if no org found (shouldn't happen in valid flow)
+  if (!org) return <div>Organization not found.</div>;
 
-    // 3. Fetch Stores for this Org
-    const { data: stores } = await supabase
-        .from("stores")
-        .select("id, woocommerce_domain, currency_code") //
-        .eq("organization_id", org.id);
+  const isActive = org.subscription_status === "active";
 
-    const storeList = stores || [];
-
-    // --- LOGIC BRANCHING ---
-
-    // SCENARIO B: Solo Founder (1 Store) -> Auto-Redirect
-    if (storeList.length === 1) {
-        redirect(`/dashboard/${storeList[0].id}`);
-    }
-
-    // SCENARIO A & C: Agency (Many Stores) or New User (0 Stores) -> Render UI
-    return (
-        <div className="min-h-screen bg-zinc-50 p-8 font-sans">
-            <div className="mx-auto max-w-4xl">
-                <header className="mb-8">
-                    <h1 className="text-2xl font-bold tracking-tight text-zinc-900">
-                        Select Store
-                    </h1>
-                    <p className="text-zinc-500">
-                        Organization ID: <span className="font-mono text-xs">{org.id}</span>
-                    </p>
-                </header>
-
-                {storeList.length === 0 ? (
-                    // Empty State
-                    <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50 p-12 text-center">
-                        <h3 className="mt-2 text-sm font-semibold text-zinc-900">No stores connected</h3>
-                        <p className="mt-1 text-sm text-zinc-500">
-                            Install the AlphaWoo Connector plugin on your WordPress site to begin.
-                        </p>
-                        <div className="mt-6">
-                            <Link
-                                href="/onboarding"
-                                className="inline-flex items-center rounded-md bg-zinc-900 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-zinc-700"
-                            >
-                                Connect a Store
-                            </Link>
-                        </div>
-                    </div>
-                ) : (
-                    // List State (Agency View)
-                    <ul role="list" className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-                        {storeList.map((store) => (
-                            <li key={store.id} className="col-span-1 divide-y divide-zinc-200 rounded-lg bg-white shadow transition hover:shadow-md">
-                                <Link href={`/dashboard/${store.id}`} className="block h-full">
-                                    <div className="flex w-full items-center justify-between space-x-6 p-6">
-                                        <div className="flex-1 truncate">
-                                            <div className="flex items-center space-x-3">
-                                                <h3 className="truncate text-sm font-medium text-zinc-900">
-                                                    {store.woocommerce_domain}
-                                                </h3>
-                                                <span className="inline-block flex-shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                                                    Active
-                                                </span>
-                                            </div>
-                                            <p className="mt-1 truncate text-sm text-zinc-500">
-                                                {store.woocommerce_domain}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between bg-zinc-50 px-6 py-3">
-                                        <span className="text-xs font-medium text-zinc-500">
-                                            Currency: {store.currency_code}
-                                        </span>
-                                        <span className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
-                                            Enter Dashboard &rarr;
-                                        </span>
-                                    </div>
-                                </Link>
-                            </li>
-                        ))}
-                    </ul>
-                )}
-            </div>
+  return (
+    <div className="p-8 space-y-8 max-w-5xl mx-auto">
+      
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
+          Dashboard
+        </h1>
+        <div className="text-sm text-zinc-500 font-mono">
+          ORG_ID: {org.id.split('-')[0]}...
         </div>
-    );
+      </div>
+
+      {/* --- THE CONTROL CENTER CARD --- */}
+      <Card className={`border ${isActive ? "border-emerald-500/50 bg-emerald-500/5" : "border-amber-500/50 bg-amber-500/5"}`}>
+        <CardContent className="p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          
+          {/* Left: Status Indicator */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Protocol Status
+              </h2>
+              {isActive ? (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 font-mono">
+                  <ShieldCheck className="w-3 h-3 mr-1" />
+                  ACTIVE_MODE
+                </span>
+              ) : (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400 font-mono">
+                  <AlertTriangle className="w-3 h-3 mr-1" />
+                  PASSIVE_MODE
+                </span>
+              )}
+            </div>
+            
+            <p className="text-sm text-zinc-600 dark:text-zinc-400 max-w-xl">
+              {isActive 
+                ? "Server-side recovery is engaged. Revenue capture is automated." 
+                : "Your store is observing revenue leakage but not capturing it. Initialize $Recovery to secure these funds."}
+            </p>
+          </div>
+
+          {/* Right: The Trigger */}
+          {!isActive && (
+            <div className="flex flex-col items-end gap-2 w-full md:w-auto">
+              <SubscribeButton 
+                priceId={process.env.NEXT_PUBLIC_STRIPE_PRICE_ID!} 
+                organizationId={org.id} 
+              />
+              <p className="text-[10px] text-zinc-400 font-mono uppercase tracking-wider">
+                $49.00/mo • Cancel Anytime
+              </p>
+            </div>
+          )}
+          
+          {isActive && (
+             <div className="text-right">
+                <p className="text-sm font-medium text-emerald-600 dark:text-emerald-400">
+                    Protection Active
+                </p>
+                <p className="text-xs text-zinc-500">
+                    Next billing cycle: Auto-renew
+                </p>
+             </div>
+          )}
+
+        </CardContent>
+      </Card>
+
+      {/* Placeholder for Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="h-32 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400">
+          Leakage Metric Chart
+        </div>
+        <div className="h-32 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400">
+          Recovery Rate
+        </div>
+        <div className="h-32 rounded-lg border border-dashed border-zinc-300 dark:border-zinc-700 flex items-center justify-center text-zinc-400">
+          Recent Events
+        </div>
+      </div>
+
+    </div>
+  );
 }
