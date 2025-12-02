@@ -3,66 +3,50 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
+    // 1. Init Admin Client
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
+      { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
     const body = await req.json();
-    // 1. CLEAN THE INPUT (Force lowercase, remove spaces)
-    const rawEmail = body.email || "";
-    const email = rawEmail.trim().toLowerCase();
+    const email = (body.email || "").trim().toLowerCase();
     const site_url = (body.site_url || "").trim();
 
     if (!email || !site_url) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-    console.log(`🔌 Provisioning for normalized email: [${email}]`);
+    console.log(`🔌 RPC Provisioning for: [${email}]`);
 
-    // 2. FIND USER (The "Fuzzy" Match)
-    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
-    
-    if (listError) throw listError;
+    // 2. THE NUCLEAR CHECK (RPC)
+    // Ask the DB directly: "Who owns this email?"
+    const { data: existingUserId, error: rpcError } = await supabaseAdmin
+      .rpc('get_user_id_by_email', { email_input: email });
 
-    // Compare LOWERCASE to LOWERCASE (This is the fix)
-    let targetUser = users?.find((u) => u.email?.toLowerCase().trim() === email);
+    if (rpcError) throw rpcError;
+
+    let targetUserId = existingUserId;
     let isNewUser = false;
 
-    if (targetUser) {
-        console.log(`✅ MATCH FOUND: ${targetUser.id}`);
+    // 3. LOGIC BRANCH
+    if (targetUserId) {
+      console.log(`✅ User Exists via RPC: ${targetUserId}`);
+      isNewUser = false; 
     } else {
-        console.log(`⚠️ No match found for [${email}]. Creating new user...`);
-        isNewUser = true;
-        
-        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-            email: email,
-            email_confirm: true,
-            user_metadata: { source: "plugin_provision" }
-        });
+      console.log(`👤 User NOT found via RPC. Creating...`);
+      isNewUser = true;
+      
+      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+        email: email,
+        email_confirm: true,
+        user_metadata: { source: "plugin_provision" }
+      });
 
-        if (createError) {
-             // If we somehow missed the match but they exist (e.g. slight variation), 
-             // fail loudly so we don't send a link.
-             if (createError.message.includes("already registered")) {
-                 console.log("❌ User exists but match failed. Debugging...");
-                 // This shouldn't happen with the lowercasing above, but if it does, 
-                 // we simply tell the plugin "Success" to stop the loop.
-                 return NextResponse.json({ 
-                     success: true, 
-                     message: "Connected (User Sync Issue - Email Skipped)" 
-                 });
-             }
-             throw createError;
-        }
-        targetUser = newUser.user;
+      if (createError) throw createError;
+      targetUserId = newUser.user.id;
     }
 
-    // 3. HANDLE ORGANIZATION
+    // 4. HANDLE ORGANIZATION
     const { data: existingOrg } = await supabaseAdmin
       .from("organizations")
       .select("id")
@@ -77,7 +61,7 @@ export async function POST(req: Request) {
       const { data: newOrg, error: orgError } = await supabaseAdmin
         .from("organizations")
         .insert({
-          owner_user_id: targetUser.id,
+          owner_user_id: targetUserId,
           name: body.site_name || "New Store",
           url: site_url, 
           subscription_status: 'inactive'
@@ -89,7 +73,7 @@ export async function POST(req: Request) {
       orgId = newOrg.id;
     }
 
-    // 4. SEND MAGIC LINK (STRICTLY NEW USERS)
+    // 5. SEND EMAIL (Strictly New Users)
     if (isNewUser) {
         await supabaseAdmin.auth.signInWithOtp({
             email: email,
