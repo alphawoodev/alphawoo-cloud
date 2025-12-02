@@ -15,71 +15,63 @@ const corsHeaders = {
 
 export async function POST(req: NextRequest) {
     try {
-        const { admin_email, site_url, currency, store_name } = await req.json()
+        // Phase 0 payload alignment
+        const body = await req.json()
+        const email = (body.email || body.admin_email || '').trim()
+        const siteUrl = body.url || body.site_url
+        const currency = body.currency
+        const storeName = body.name || body.store_name
 
-        if (!admin_email || !site_url) {
+        if (!email || !siteUrl) {
             return NextResponse.json({ error: 'Missing required fields' }, { status: 400, headers: corsHeaders })
         }
 
-        const cleanUrl = site_url.replace(/\/$/, '')
+        const cleanUrl = siteUrl.replace(/\/$/, '')
 
         const { data: existingStore } = await supabase
             .from('stores')
-            .select('id, organization_id')
+            .select(
+                `id, api_key, organization_id, shadow_mode,
+                 organizations (
+                    owner_user_id,
+                    users:owner_user_id ( email )
+                 )`
+            )
             .eq('url', cleanUrl)
             .single()
 
+        // Auto-recovery: same owner gets keys back; otherwise block.
         if (existingStore) {
-            const { data: users } = await supabase.auth.admin.listUsers()
-            const existingUser = users.users.find(
-                (user) => user.email?.toLowerCase() === admin_email.toLowerCase()
-            )
+            // @ts-ignore nested select alias
+            const ownerEmail = existingStore.organizations?.users?.email
 
-            if (existingUser) {
-                const { data: link } = await supabase
-                    .from('store_users')
-                    .select('role')
-                    .eq('user_id', existingUser.id)
-                    .eq('store_id', existingStore.id)
-                    .single()
-
-                if (link) {
-                    const { data: fullStore } = await supabase
-                        .from('stores')
-                        .select('id, api_key, shadow_mode')
-                        .eq('id', existingStore.id)
-                        .single()
-
-                    if (fullStore) {
-                        return NextResponse.json(
-                            {
-                                success: true,
-                                store_id: fullStore.id,
-                                api_key: fullStore.api_key,
-                                shadow_mode: fullStore.shadow_mode,
-                                dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${fullStore.id}`,
-                                message: 'AlphaWoo Re-Connected'
-                            },
-                            { status: 200, headers: corsHeaders }
-                        )
-                    }
-                }
+            if (ownerEmail && ownerEmail.toLowerCase() === email.toLowerCase()) {
+                return NextResponse.json(
+                    {
+                        success: true,
+                        store_id: existingStore.id,
+                        api_key: existingStore.api_key,
+                        shadow_mode: existingStore.shadow_mode,
+                        dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${existingStore.id}`,
+                        message: 'Recovered existing connection',
+                    },
+                    { status: 200, headers: corsHeaders }
+                )
             }
 
             return NextResponse.json(
-                {
-                    error: 'This store URL is already registered to another organization. Please contact support to transfer ownership.'
-                },
+                { error: 'This store URL is already registered to another organization.' },
                 { status: 409, headers: corsHeaders }
             )
         }
 
+        // CREATE NEW FLOW (unchanged from earlier with normalized inputs)
         const tempPassword = uuidv4()
         const { data: userData, error: createError } = await supabase.auth.admin.createUser({
-            email: admin_email,
+            email,
             password: tempPassword,
             email_confirm: true,
-            user_metadata: { full_name: 'Store Admin' }
+            user_metadata: { full_name: 'Store Admin' },
         })
 
         let userId = userData.user?.id
@@ -89,9 +81,7 @@ export async function POST(req: NextRequest) {
 
             if (createError.message.includes('already been registered') || createError.status === 422) {
                 const { data: users } = await supabase.auth.admin.listUsers()
-                const existingUser = users.users.find(
-                    (user) => user.email?.toLowerCase() === admin_email.toLowerCase()
-                )
+                const existingUser = users.users.find((user) => user.email?.toLowerCase() === email.toLowerCase())
 
                 if (!existingUser) {
                     return NextResponse.json(
@@ -116,10 +106,10 @@ export async function POST(req: NextRequest) {
         const { data: org, error: orgError } = await supabase
             .from('organizations')
             .insert({
-                name: store_name || 'My Organization',
+                name: storeName || 'My Organization',
                 owner_user_id: userId,
                 plan_id: 'FREE',
-                stripe_customer_id: null
+                stripe_customer_id: null,
             })
             .select('id')
             .single()
@@ -137,12 +127,12 @@ export async function POST(req: NextRequest) {
             .from('stores')
             .insert({
                 organization_id: org.id,
-                name: store_name || 'WooCommerce Store',
+                name: storeName || 'WooCommerce Store',
                 url: cleanUrl,
                 currency_code: currency || 'USD',
                 api_key: newApiKey,
                 shadow_mode: true,
-                active_modules: ['shadow_mode']
+                active_modules: ['shadow_mode'],
             })
             .select('id')
             .single()
@@ -158,7 +148,7 @@ export async function POST(req: NextRequest) {
         await supabase.from('store_users').insert({
             user_id: userId,
             store_id: store.id,
-            role: 'owner'
+            role: 'owner',
         })
 
         return NextResponse.json(
@@ -168,7 +158,7 @@ export async function POST(req: NextRequest) {
                 api_key: newApiKey,
                 shadow_mode: true,
                 dashboard_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard/${store.id}`,
-                message: 'AlphaWoo Connected: Shadow Mode Active'
+                message: 'AlphaWoo Connected: Shadow Mode Active',
             },
             { status: 201, headers: corsHeaders }
         )
