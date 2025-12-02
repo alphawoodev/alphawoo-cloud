@@ -41,7 +41,9 @@ export async function POST(req: NextRequest) {
         }
 
         // 3. Construct FIRST-PARTY Link (Direct to our domain)
-        const magicLinkUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}&type=${type}&email=${encodeURIComponent(email)}&next=${encodeURIComponent(nextUrl || '/dashboard')}`
+        // Send new users to set their password first; allow override via nextUrl if explicitly provided.
+        const magicLinkNext = nextUrl || '/auth/update-password'
+        const magicLinkUrl = `${baseUrl}/auth/callback?token=${encodeURIComponent(token)}&type=${type}&email=${encodeURIComponent(email)}&next=${encodeURIComponent(magicLinkNext)}`
 
         console.log(`[Auth] Generated OTP Link for ${email}`)
 
