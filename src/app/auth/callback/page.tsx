@@ -24,13 +24,30 @@ function AuthCallbackPageContent() {
             const email = searchParams.get('email')
             const next = searchParams.get('next') || '/dashboard'
 
-            // 2. Fallback: Check for Hash Fragment (Legacy/Implicit Flow)
+            // 2. Fallback: Check for Hash Fragment (Implicit Flow)
             const hash = window.location.hash
             if (hash && hash.includes('access_token')) {
-                const { data } = await supabase.auth.getSession()
-                if (data.session) {
-                    finalizeLogin(next)
-                    return
+                const params = new URLSearchParams(hash.replace('#', ''))
+                const access_token = params.get('access_token')
+                const refresh_token = params.get('refresh_token')
+
+                if (access_token && refresh_token) {
+                    const { data, error } = await supabase.auth.setSession({
+                        access_token,
+                        refresh_token,
+                    })
+
+                    if (error) {
+                        console.error('Session Restore Error:', error)
+                        setIsError(true)
+                        setStatus('Link expired or invalid. Please try again.')
+                        return
+                    }
+
+                    if (data.session) {
+                        finalizeLogin(next)
+                        return
+                    }
                 }
             }
 
