@@ -23,7 +23,8 @@ export async function POST(req: Request) {
     }
 
     // 3. Call the Smart RPC
-    const { error } = await supabase.rpc('ingest_cart_v3', {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error } = await (supabase as any).rpc('ingest_cart_v3', {
       p_organization_id: organization_id,
       p_email: email,
       p_cart_key: cart_key,
