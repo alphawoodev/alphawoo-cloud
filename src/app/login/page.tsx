@@ -95,7 +95,7 @@ function LoginForm() {
                         >
                             Use Magic Link (First Time Login)
                         </Link>
-                        <Link href="/forgot-password" className="block text-zinc-400 hover:text-zinc-600">
+                        <Link href="/login/forgot-password" className="block text-zinc-400 hover:text-zinc-600">
                             Forgot Password?
                         </Link>
                     </div>
