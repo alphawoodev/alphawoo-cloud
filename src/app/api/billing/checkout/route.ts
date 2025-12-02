@@ -28,10 +28,10 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 })
         }
 
-        // 3. Verify ownership
+        // 3. Verify Ownership & Get Current ID
         const { data: org } = (await supabase
             .from('organizations')
-            .select('stripe_customer_id, owner_user_id, name')
+            .select('stripe_customer_id, owner_user_id, name, email')
             .eq('id', organizationId)
             .single()) as unknown as { data: any }
 
@@ -40,11 +40,28 @@ export async function POST(request: Request) {
         }
 
         let customerId = org.stripe_customer_id as string | null
+        let shouldCreateNewCustomer = !customerId
 
-        // 4. JIT Customer creation
-        if (!customerId) {
+        // SELF-HEALING LOGIC: Verify the ID actually exists in Stripe
+        if (customerId) {
+            try {
+                const customer = await stripe.customers.retrieve(customerId)
+                // If Stripe returns a "deleted" object, we must create a new one
+                if ((customer as Stripe.DeletedCustomer).deleted) {
+                    console.warn(`⚠️ Customer ${customerId} was deleted in Stripe. Generating new one.`)
+                    shouldCreateNewCustomer = true
+                }
+            } catch (error) {
+                // If Stripe throws "resource_missing", the ID is invalid
+                console.warn(`⚠️ Customer ${customerId} not found in Stripe. Generating new one.`)
+                shouldCreateNewCustomer = true
+            }
+        }
+
+        // 4. JIT Customer Creation (If missing or invalid)
+        if (shouldCreateNewCustomer) {
             const customer = await stripe.customers.create({
-                email: user.email || undefined,
+                email: user.email,
                 name: org.name || 'AlphaWoo Agency',
                 metadata: {
                     supabaseOrgId: organizationId,
@@ -56,14 +73,16 @@ export async function POST(request: Request) {
 
             await supabase
                 .from('organizations')
-                // @ts-ignore: stripe_customer_id column exists in runtime schema
+                // @ts-ignore: runtime schema includes stripe_customer_id
                 .update({ stripe_customer_id: customerId } as any)
                 .eq('id', organizationId)
         }
 
         // 5. Generate checkout session
+        const resolvedCustomerId = customerId as string
+
         const session = await stripe.checkout.sessions.create({
-            customer: customerId,
+            customer: resolvedCustomerId,
             line_items: [
                 {
                     price: priceId,
