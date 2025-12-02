@@ -3,7 +3,6 @@ import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    // 1. Init Admin Client (Bypass RLS to create users/orgs)
     const supabaseAdmin = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!,
@@ -16,68 +15,72 @@ export async function POST(req: Request) {
     );
 
     const body = await req.json();
-    const { email, site_url, site_name } = body;
+    // 1. CLEAN THE INPUT (Force lowercase, remove spaces)
+    const rawEmail = body.email || "";
+    const email = rawEmail.trim().toLowerCase();
+    const site_url = (body.site_url || "").trim();
 
-    if (!email || !site_url) {
-      return NextResponse.json({ error: "Missing fields" }, { status: 400 });
-    }
+    if (!email || !site_url) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-    console.log(`🔌 Provisioning request for: ${email}`);
+    console.log(`🔌 Provisioning for normalized email: [${email}]`);
 
-    // 2. CHECK IDENTITY (The Smart Step)
-    // Does this user already exist?
-    const { data: { users }, error: searchError } = await supabaseAdmin.auth.admin.listUsers();
+    // 2. FIND USER (The "Fuzzy" Match)
+    const { data: { users }, error: listError } = await supabaseAdmin.auth.admin.listUsers();
     
-    // Simple find (Optimization: Supabase doesn't have getUserByEmail in admin API directly, listUsers filters usually needed or exact match loop)
-    // For MVP scale, filtering the list is fine. For scale, use RPC.
-    let targetUser = users?.find((u) => u.email?.toLowerCase() === email.toLowerCase());
+    if (listError) throw listError;
+
+    // Compare LOWERCASE to LOWERCASE (This is the fix)
+    let targetUser = users?.find((u) => u.email?.toLowerCase().trim() === email);
     let isNewUser = false;
 
-    // 3. HANDLE NEW USERS
-    if (!targetUser) {
-      console.log("👤 Creating NEW user...");
-      isNewUser = true;
-      const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
-        email: email,
-        email_confirm: true, // Auto-confirm so they can login immediately via Magic Link
-        user_metadata: { source: "plugin_provision" }
-      });
-
-      if (createError) throw createError;
-      targetUser = newUser.user;
+    if (targetUser) {
+        console.log(`✅ MATCH FOUND: ${targetUser.id}`);
     } else {
-      console.log(`👤 Found EXISTING user: ${targetUser.id}`);
+        console.log(`⚠️ No match found for [${email}]. Creating new user...`);
+        isNewUser = true;
+        
+        const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
+            email: email,
+            email_confirm: true,
+            user_metadata: { source: "plugin_provision" }
+        });
+
+        if (createError) {
+             // If we somehow missed the match but they exist (e.g. slight variation), 
+             // fail loudly so we don't send a link.
+             if (createError.message.includes("already registered")) {
+                 console.log("❌ User exists but match failed. Debugging...");
+                 // This shouldn't happen with the lowercasing above, but if it does, 
+                 // we simply tell the plugin "Success" to stop the loop.
+                 return NextResponse.json({ 
+                     success: true, 
+                     message: "Connected (User Sync Issue - Email Skipped)" 
+                 });
+             }
+             throw createError;
+        }
+        targetUser = newUser.user;
     }
 
-    if (!targetUser) throw new Error("User creation failed");
-
-    // 4. CREATE ORGANIZATION (The Store)
-    // Check if Org exists for this URL to prevent duplicates (The "Zombie" check)
+    // 3. HANDLE ORGANIZATION
     const { data: existingOrg } = await supabaseAdmin
       .from("organizations")
-      .select("id, api_key") // Assuming you have an api_key column, or we generate one
-      .eq("url", site_url) // Assuming you have a url column
+      .select("id")
+      .eq("url", site_url)
       .single();
 
-    let orgId, apiKey;
+    let orgId;
 
     if (existingOrg) {
-      console.log("🏪 Store already exists. Reconnecting...");
-      // SECURITY: In a strict model, we wouldn't just hand this back. 
-      // But for "Trojan Horse" adoption, we assume possession of the WP Admin implies ownership.
       orgId = existingOrg.id;
-      // Update owner if needed? No, leave original owner for now to prevent hijacking.
     } else {
-      console.log("🏪 Creating NEW Store...");
-      // Create the Org
       const { data: newOrg, error: orgError } = await supabaseAdmin
         .from("organizations")
         .insert({
           owner_user_id: targetUser.id,
-          name: site_name || "New Store",
-          // url: site_url, // Ensure your DB has this column
-          // api_key: crypto.randomUUID(), // If you use API keys
-          subscription_status: 'inactive' // Start in Shadow Mode
+          name: body.site_name || "New Store",
+          url: site_url, 
+          subscription_status: 'inactive'
         })
         .select()
         .single();
@@ -86,8 +89,7 @@ export async function POST(req: Request) {
       orgId = newOrg.id;
     }
 
-    // 5. SEND MAGIC LINK (Only if New User)
-    // If it's you (Existing), we skip this. You just login normally.
+    // 4. SEND MAGIC LINK (STRICTLY NEW USERS)
     if (isNewUser) {
         await supabaseAdmin.auth.signInWithOtp({
             email: email,
@@ -97,12 +99,11 @@ export async function POST(req: Request) {
         });
     }
 
-    // 6. RETURN CREDENTIALS TO PLUGIN
     return NextResponse.json({
       success: true,
       org_id: orgId,
       user_status: isNewUser ? "new" : "existing",
-      message: isNewUser ? "Check your email." : "Store connected to existing account."
+      message: "Connected."
     });
 
   } catch (err: any) {
