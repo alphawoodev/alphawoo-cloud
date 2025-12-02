@@ -1,13 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Zap, Loader2 } from 'lucide-react'
+import { Loader2, Terminal } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 
 interface SubscribeButtonProps {
     priceId: string
     organizationId: string
-    userEmail: string
 }
 
 export function SubscribeButton({ priceId, organizationId }: SubscribeButtonProps) {
@@ -27,15 +27,16 @@ export function SubscribeButton({ priceId, organizationId }: SubscribeButtonProp
 
             const data = await res.json()
 
-            if (!res.ok) throw new Error(data.error || 'Checkout initialization failed')
+            if (!res.ok) throw new Error(data.error || 'Initialization failed')
 
             if (data.url) {
                 window.location.href = data.url
             }
         } catch (error: any) {
             console.error(error)
-            // Fallback notification without external deps
-            alert(`Payment Gateway Error: ${error.message || 'Unknown error'}`)
+            toast.error('Protocol Error', {
+                description: 'Could not initialize secure checkout session.',
+            })
             setLoading(false)
         }
     }
@@ -45,17 +46,19 @@ export function SubscribeButton({ priceId, organizationId }: SubscribeButtonProp
             onClick={handleCheckout}
             disabled={loading}
             size="lg"
-            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-md transition-all"
+            className="w-full sm:w-auto bg-zinc-900 hover:bg-zinc-800 text-white border border-zinc-800 shadow-sm transition-all"
         >
             {loading ? (
                 <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Connecting to Stripe...
+                    <span className="font-mono text-xs tracking-wider">CONNECTING...</span>
                 </>
             ) : (
                 <>
-                    <Zap className="mr-2 h-4 w-4 fill-current" />
-                    Activate Insurance ($49/mo)
+                    <Terminal className="mr-2 h-4 w-4 text-emerald-500" />
+                    <span className="font-mono font-medium tracking-tight">
+                        INITIALIZE <span className="text-emerald-400">$RECOVERY</span>
+                    </span>
                 </>
             )}
         </Button>
