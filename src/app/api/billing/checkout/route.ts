@@ -87,7 +87,7 @@ export async function POST(request: Request) {
                 .eq('id', organizationId)
         }
 
-        // 5. Generate Session
+        // 5. Generate Session (Double-Stamped Metadata)
         const resolvedCustomerId = customerId as string
         const session = await stripe.checkout.sessions.create({
             customer: resolvedCustomerId,
@@ -95,9 +95,19 @@ export async function POST(request: Request) {
             mode: 'subscription',
             success_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?payment=success`,
             cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard?payment=cancelled`,
-            subscription_data: {
-                metadata: { organizationId: organizationId },
+
+            // FIX 1: Attach directly to the Session (This is what the Webhook reads first)
+            metadata: {
+                organizationId: organizationId,
             },
+
+            // FIX 2: Attach to the Subscription (For future renewal webhooks)
+            subscription_data: {
+                metadata: {
+                    organizationId: organizationId,
+                },
+            },
+
             allow_promotion_codes: true,
         })
 
