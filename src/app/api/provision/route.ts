@@ -15,8 +15,7 @@ export async function POST(req: Request) {
 
     if (!email || !site_url) return NextResponse.json({ error: "Missing fields" }, { status: 400 });
 
-    // 1. IDENTITY CHECK (RPC)
-    // "Does this user exist?"
+    // 1. IDENTITY
     const { data: existingUserId, error: rpcError } = await supabaseAdmin
       .rpc('get_user_id_by_email', { email_input: email });
 
@@ -25,24 +24,18 @@ export async function POST(req: Request) {
     let targetUserId = existingUserId;
     let isNewUser = false;
 
-    if (targetUserId) {
-      console.log(`✅ User Recognized: ${targetUserId}`);
-      isNewUser = false; // <--- THIS PREVENTS THE EMAIL
-    } else {
-      console.log(`👤 User New. Creating account...`);
+    if (!targetUserId) {
       isNewUser = true;
-      
       const { data: newUser, error: createError } = await supabaseAdmin.auth.admin.createUser({
         email: email,
         email_confirm: true,
         user_metadata: { source: "plugin_provision" }
       });
-
       if (createError) throw createError;
       targetUserId = newUser.user.id;
     }
 
-    // 2. STORE CHECK
+    // 2. STORE LOOKUP
     const { data: existingOrg } = await supabaseAdmin
       .from("organizations")
       .select("id, owner_user_id")
@@ -50,19 +43,35 @@ export async function POST(req: Request) {
       .single();
 
     let orgId;
+    let transferLog = "No Transfer Needed"; // Default state
 
     if (existingOrg) {
       orgId = existingOrg.id;
-      // Transfer logic (if connecting with different email)
-      if (existingOrg.owner_user_id !== targetUserId) {
-          console.log("🔄 Transferring Ownership...");
-          await supabaseAdmin
+      const oldOwner = existingOrg.owner_user_id;
+
+      // 3. THE HANDOVER CHECK
+      if (oldOwner !== targetUserId) {
+          console.log(`🔄 Transfer Initiated: ${oldOwner} -> ${targetUserId}`);
+          
+          // PERFORM UPDATE AND RETURN RESULT
+          const { data: updatedData, error: updateError } = await supabaseAdmin
             .from("organizations")
             .update({ owner_user_id: targetUserId })
-            .eq("id", orgId);
+            .eq("id", orgId)
+            .select() // <--- CRITICAL: Prove it changed
+            .single();
+
+          if (updateError) {
+              transferLog = `FAILED: ${updateError.message}`;
+              console.error("Transfer Failed", updateError);
+          } else {
+              transferLog = `SUCCESS: Changed from ${oldOwner} to ${updatedData.owner_user_id}`;
+          }
+      } else {
+          transferLog = `SKIPPED: Owner is already ${targetUserId}`;
       }
     } else {
-      // Create New Store
+      // Create New
       const { data: newOrg, error: orgError } = await supabaseAdmin
         .from("organizations")
         .insert({
@@ -76,25 +85,27 @@ export async function POST(req: Request) {
 
       if (orgError) throw orgError;
       orgId = newOrg.id;
+      transferLog = "New Store Created";
     }
 
-    // 3. EMAIL LOGIC (The Guard Rail)
+    // 4. EMAIL
     if (isNewUser) {
-        // Only sends if we actually created the user in Step 1
         await supabaseAdmin.auth.signInWithOtp({
             email: email,
             options: { emailRedirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/dashboard` }
         });
     }
 
+    // RETURN DEBUG DATA IN RESPONSE
     return NextResponse.json({
       success: true,
       org_id: orgId,
-      message: "Connected."
+      message: "Connected.",
+      debug_transfer: transferLog, // <--- READ THIS IN NETWORK TAB
+      debug_user_id: targetUserId
     });
 
   } catch (err: any) {
-    console.error("Provisioning Error:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
