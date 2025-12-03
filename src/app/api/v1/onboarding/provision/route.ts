@@ -66,10 +66,36 @@ export async function POST(req: NextRequest) {
             .eq('url', cleanUrl)
             .single()
 
-        // 3) Resolve/create organization (reusing store's org when present)
-        let orgId: string
-        if (existingStore?.organization_id) {
-            orgId = existingStore.organization_id
+        // 3) Resolve/create organization (reusing store's org when present, and updating owner if needed)
+        let orgId: string | null = existingStore?.organization_id || null
+
+        if (orgId) {
+            const { data: orgRow, error: orgFetchError } = await supabaseAdmin
+                .from('organizations')
+                .select('id, owner_user_id')
+                .eq('id', orgId)
+                .single()
+
+            if (orgFetchError) {
+                return NextResponse.json(
+                    { error: `Org lookup failed: ${orgFetchError.message}` },
+                    { status: 500, headers: corsHeaders }
+                )
+            }
+
+            if (orgRow && orgRow.owner_user_id !== userId) {
+                const { error: ownerUpdateError } = await supabaseAdmin
+                    .from('organizations')
+                    .update({ owner_user_id: userId })
+                    .eq('id', orgRow.id)
+
+                if (ownerUpdateError) {
+                    return NextResponse.json(
+                        { error: `Org owner update failed: ${ownerUpdateError.message}` },
+                        { status: 500, headers: corsHeaders }
+                    )
+                }
+            }
         } else {
             const { data: newOrg, error: orgError } = await supabaseAdmin
                 .from('organizations')
