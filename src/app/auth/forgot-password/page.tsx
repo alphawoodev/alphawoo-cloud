@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
@@ -14,20 +13,17 @@ export default function ForgotPassword() {
     e.preventDefault();
     setLoading(true);
 
-    const supabase = createClient();
-    const origin = window.location.origin;
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${origin}/auth/callback?next=/auth/update-password`,
-    });
-
-    setLoading(false);
-
-    if (error) {
-      console.error(error);
-      toast.error("Error sending reset email: " + error.message);
-    } else {
-      toast.success("Check your email for the reset link.");
+    try {
+      await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+    } catch (error) {
+      console.error("Forgot password request failed:", error);
+    } finally {
+      toast.success("If an account exists, we sent a reset link.");
+      setLoading(false);
     }
   };
 
